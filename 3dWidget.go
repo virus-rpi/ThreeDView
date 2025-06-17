@@ -27,17 +27,15 @@ var (
 // ThreeDWidget is a widget that displays 3D objects
 type ThreeDWidget struct {
 	widget.BaseWidget
-	image                *canvas.Image // The image that is rendered on
-	camera               *Camera       // The camera of the 3D widget
-	objects              []*Object     // The objects in the 3D widget
-	tickMethods          []func()      // The methods that are called every frame
-	bgColor              color.Color   // The background color of the 3D widget
-	renderFaceOutlines   bool          // Whether the faces should be rendered with outlines
-	renderFaceColors     bool          // Whether the faces should be rendered with colors
-	fpsCap               float64       // The maximum frames per second the widget should render at
-	tpsCap               float64       // The maximum ticks per second the widget should tick at
-	renderSilhouettes    bool          // Whether there should be a thick silhouette around the objects
-	renderObjectOutlines bool          // Whether to render outlines for each object separately
+	image              *canvas.Image // The image that is rendered on
+	camera             *Camera       // The camera of the 3D widget
+	objects            []*Object     // The objects in the 3D widget
+	tickMethods        []func()      // The methods that are called every frame
+	bgColor            color.Color   // The background color of the 3D widget
+	renderFaceOutlines bool          // Whether the faces should be rendered with outlines
+	renderFaceColors   bool          // Whether the faces should be rendered with colors
+	fpsCap             float64       // The maximum frames per second the widget should render at
+	tpsCap             float64       // The maximum ticks per second the widget should tick at
 }
 
 // NewThreeDWidget creates a new 3D widget
@@ -165,16 +163,6 @@ func (w *ThreeDWidget) SetRenderFaceColors(newVal bool) {
 	w.renderFaceColors = newVal
 }
 
-// SetRenderSilhouettes sets whether the objects should be rendered with thick outlines.
-func (w *ThreeDWidget) SetRenderSilhouettes(newVal bool) {
-	w.renderSilhouettes = newVal
-}
-
-// SetRenderObjectOutlines sets whether to render outlines for each object separately.
-func (w *ThreeDWidget) SetRenderObjectOutlines(newVal bool) {
-	w.renderObjectOutlines = newVal
-}
-
 func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 	return &threeDRenderer{image: w.image}
 }
@@ -188,18 +176,6 @@ func (w *ThreeDWidget) render() image.Image {
 		zBuffer[i] = make([]float64, Height)
 		for j := range zBuffer[i] {
 			zBuffer[i][j] = math.Inf(1) // Initialize to the farthest possible
-		}
-	}
-
-	if w.renderSilhouettes {
-		camPos := w.camera.Position
-		for _, object := range w.objects {
-			edges := object.GetSilhouetteEdges(camPos)
-			for _, edge := range edges {
-				p1 := w.camera.Project(edge[0], Width, Height)
-				p2 := w.camera.Project(edge[1], Width, Height)
-				thickLine(img, int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]), color.Black, 4)
-			}
 		}
 	}
 
@@ -229,7 +205,7 @@ func (w *ThreeDWidget) render() image.Image {
 	for _, face := range faces {
 		go func(face FaceData) {
 			defer wg2d.Done()
-			clippedPolys := w.camera.ClipAndProjectFaceWithZ(face.Face, Width, Height)
+			clippedPolys := w.camera.ClipAndProjectFace(face.Face, Width, Height)
 			if clippedPolys == nil {
 				return
 			}
@@ -258,7 +234,7 @@ func (w *ThreeDWidget) render() image.Image {
 
 	for _, face := range projectedFaces {
 		if w.renderFaceColors {
-			drawFilledTriangleZ(img, face.Face, face.Z, face.Color, zBuffer)
+			drawFilledTriangle(img, face.Face, face.Z, face.Color, zBuffer)
 		}
 	}
 
@@ -270,87 +246,13 @@ func (w *ThreeDWidget) render() image.Image {
 			} else {
 				outlineColor = color.Black
 			}
-			drawOutlineWithZTest(img, face, zBuffer, outlineColor)
-		}
-	}
-
-	if w.renderObjectOutlines {
-		camPos := w.camera.Position
-		for _, object := range w.objects {
-			edges := object.GetSilhouetteEdges(camPos)
-			for _, edge := range edges {
-				p1 := w.camera.Project(edge[0], Width, Height)
-				p2 := w.camera.Project(edge[1], Width, Height)
-				z1 := w.camera.ProjectZ(edge[0])
-				z2 := w.camera.ProjectZ(edge[1])
-				x0, y0, x1, y1, ok := cohenSutherlandClip(p1[0], p1[1], p2[0], p2[1], Width, Height)
-				if ok {
-					p1c := mgl.Vec2{x0, y0}
-					p2c := mgl.Vec2{x1, y1}
-					drawEdgeWithZTest(img, p1c, z1, p2c, z2, color.Black, zBuffer)
-				}
-			}
+			drawEdge(img, face.Face[0], face.Z[0], face.Face[1], face.Z[1], outlineColor, zBuffer)
+			drawEdge(img, face.Face[1], face.Z[1], face.Face[2], face.Z[2], outlineColor, zBuffer)
+			drawEdge(img, face.Face[2], face.Z[2], face.Face[0], face.Z[0], outlineColor, zBuffer)
 		}
 	}
 
 	return img
-}
-
-func drawOutlineWithZTest(img *image.RGBA, face ProjectedFaceData, zBuffer [][]float64, outlineColor color.Color) {
-	drawEdgeWithZTest(img, face.Face[0], face.Z[0], face.Face[1], face.Z[1], outlineColor, zBuffer)
-	drawEdgeWithZTest(img, face.Face[1], face.Z[1], face.Face[2], face.Z[2], outlineColor, zBuffer)
-	drawEdgeWithZTest(img, face.Face[2], face.Z[2], face.Face[0], face.Z[0], outlineColor, zBuffer)
-}
-
-func drawEdgeWithZTest(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, color color.Color, zBuffer [][]float64) {
-	x0 := int(math.Round(p1.X()))
-	y0 := int(math.Round(p1.Y()))
-	x1 := int(math.Round(p2.X()))
-	y1 := int(math.Round(p2.Y()))
-	dx := int(math.Abs(float64(x1 - x0)))
-	dy := int(math.Abs(float64(y1 - y0)))
-	sx := -1
-	if x0 < x1 {
-		sx = 1
-	}
-	sy := -1
-	if y0 < y1 {
-		sy = 1
-	}
-	err := dx - dy
-	maxIter := dx + dy + 10
-	iter := 0
-	for {
-		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
-			var t float64
-			totalDist := math.Hypot(float64(x1-x0), float64(y1-y0))
-			if totalDist != 0 {
-				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / totalDist
-			} else {
-				t = 0
-			}
-			z := z1 + (z2-z1)*t
-			if z <= zBuffer[x0][y0] {
-				img.Set(x0, y0, color)
-			}
-		}
-		if x0 == x1 && y0 == y1 {
-			break
-		}
-		e2 := 2 * err
-		if e2 > -dy {
-			err -= dy
-			x0 += sx
-		}
-		if e2 < dx {
-			err += dx
-			y0 += sy
-		}
-		iter++
-		if iter > maxIter {
-			break
-		}
-	}
 }
 
 func (w *ThreeDWidget) Dragged(event *fyne.DragEvent) {
@@ -407,7 +309,7 @@ func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
 	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
 }
 
-func drawFilledTriangleZ(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor color.Color, zBuffer [][]float64) {
+func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor color.Color, zBuffer [][]float64) {
 	v := [3]struct {
 		p mgl.Vec2
 		z float64
@@ -474,85 +376,13 @@ func drawFilledTriangleZ(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor
 	}
 }
 
-// Cohen–Sutherland outcodes
-const (
-	INSIDE = 0 // 0000
-	LEFT   = 1 // 0001
-	RIGHT  = 2 // 0010
-	BOTTOM = 4 // 0100
-	TOP    = 8 // 1000
-)
-
-func computeOutCode(x, y float64, width, height Pixel) int {
-	code := INSIDE
-	if x < 0 {
-		code |= LEFT
-	} else if x >= float64(width) {
-		code |= RIGHT
-	}
-	if y < 0 {
-		code |= TOP
-	} else if y >= float64(height) {
-		code |= BOTTOM
-	}
-	return code
-}
-
-// Clips a line to the screen rectangle. Returns true if a visible segment exists, and sets (x0, y0)-(x1, y1) to the clipped segment.
-func cohenSutherlandClip(x0, y0, x1, y1 float64, width, height Pixel) (float64, float64, float64, float64, bool) {
-	outcode0 := computeOutCode(x0, y0, width, height)
-	outcode1 := computeOutCode(x1, y1, width, height)
-	accept := false
-	for {
-		if outcode0|outcode1 == 0 {
-			accept = true
-			break
-		} else if outcode0&outcode1 != 0 {
-			break
-		} else {
-			var outcodeOut int
-			var x, y float64
-			if outcode0 != 0 {
-				outcodeOut = outcode0
-			} else {
-				outcodeOut = outcode1
-			}
-			if outcodeOut&TOP != 0 {
-				x = x0 + (x1-x0)*(0-y0)/(y1-y0)
-				y = 0
-			} else if outcodeOut&BOTTOM != 0 {
-				x = x0 + (x1-x0)*(float64(height-1)-y0)/(y1-y0)
-				y = float64(height - 1)
-			} else if outcodeOut&RIGHT != 0 {
-				y = y0 + (y1-y0)*(float64(width-1)-x0)/(x1-x0)
-				x = float64(width - 1)
-			} else if outcodeOut&LEFT != 0 {
-				y = y0 + (y1-y0)*(0-x0)/(x1-x0)
-				x = 0
-			}
-			if outcodeOut == outcode0 {
-				x0, y0 = x, y
-				outcode0 = computeOutCode(x0, y0, width, height)
-			} else {
-				x1, y1 = x, y
-				outcode1 = computeOutCode(x1, y1, width, height)
-			}
-		}
-	}
-	return x0, y0, x1, y1, accept
-}
-
-func thickLine(img *image.RGBA, x0, y0, x1, y1 int, col color.Color, thickness int) {
-	for dx := -thickness / 2; dx <= thickness/2; dx++ {
-		for dy := -thickness / 2; dy <= thickness/2; dy++ {
-			line(img, x0+dx, y0+dy, x1+dx, y1+dy, col)
-		}
-	}
-}
-
-func line(img *image.RGBA, x0, y0, x1, y1 int, col color.Color) {
-	dx := math.Abs(float64(x1 - x0))
-	dy := math.Abs(float64(y1 - y0))
+func drawEdge(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, color color.Color, zBuffer [][]float64) {
+	x0 := int(math.Round(p1.X()))
+	y0 := int(math.Round(p1.Y()))
+	x1 := int(math.Round(p2.X()))
+	y1 := int(math.Round(p2.Y()))
+	dx := int(math.Abs(float64(x1 - x0)))
+	dy := int(math.Abs(float64(y1 - y0)))
 	sx := -1
 	if x0 < x1 {
 		sx = 1
@@ -562,9 +392,21 @@ func line(img *image.RGBA, x0, y0, x1, y1 int, col color.Color) {
 		sy = 1
 	}
 	err := dx - dy
+	maxIter := dx + dy + 10
+	iter := 0
 	for {
-		if x0 >= 0 && x0 < img.Bounds().Dx() && y0 >= 0 && y0 < img.Bounds().Dy() {
-			img.Set(x0, y0, col)
+		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
+			var t float64
+			totalDist := math.Hypot(float64(x1-x0), float64(y1-y0))
+			if totalDist != 0 {
+				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / totalDist
+			} else {
+				t = 0
+			}
+			z := z1 + (z2-z1)*t
+			if z <= zBuffer[x0][y0] {
+				img.Set(x0, y0, color)
+			}
 		}
 		if x0 == x1 && y0 == y1 {
 			break
@@ -577,6 +419,10 @@ func line(img *image.RGBA, x0, y0, x1, y1 int, col color.Color) {
 		if e2 < dx {
 			err += dx
 			y0 += sy
+		}
+		iter++
+		if iter > maxIter {
+			break
 		}
 	}
 }

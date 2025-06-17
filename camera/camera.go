@@ -89,17 +89,29 @@ func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
 		}
 	}
 
-	center := mgl.Vec2{float64(width) / 2, float64(height) / 2}
-	if pointInTriangle(center, mgl.Vec2{projected[0].X(), projected[0].Y()}, mgl.Vec2{projected[1].X(), projected[1].Y()}, mgl.Vec2{projected[2].X(), projected[2].Y()}) {
-		return true
+	corners := []mgl.Vec2{
+		{0, 0},
+		{float64(width), 0},
+		{float64(width), float64(height)},
+		{0, float64(height)},
+		{float64(width) / 2, float64(height) / 2}, // center
+	}
+	tri := [3]mgl.Vec2{
+		{projected[0].X(), projected[0].Y()},
+		{projected[1].X(), projected[1].Y()},
+		{projected[2].X(), projected[2].Y()},
+	}
+	for _, corner := range corners {
+		if pointInTriangle(corner, tri[0], tri[1], tri[2]) {
+			return true
+		}
 	}
 
 	return false
 }
 
 // ClipAndProjectFace clips a polygon (in world space) to the camera frustum and returns the resulting polygon(s) in screen space
-// Now also returns per-vertex z values for z-buffering
-func (camera *Camera) ClipAndProjectFaceWithZ(face Face, width, height Pixel) []struct {
+func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struct {
 	Points [3]mgl.Vec2
 	Z      [3]float64
 } {
@@ -162,13 +174,6 @@ func (camera *Camera) ClipAndProjectFaceWithZ(face Face, width, height Pixel) []
 		}{tri, ztri})
 	}
 	return result
-}
-
-// ProjectZ returns the camera-space Z value (depth) of a 3D point
-func (camera *Camera) ProjectZ(point mgl.Vec3) float64 {
-	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
-	p := view.Mul4x1(point.Vec4(1))
-	return p.Z()
 }
 
 // clipPolygonHomogeneous clips a convex polygon in homogeneous clip space against the canonical view frustum

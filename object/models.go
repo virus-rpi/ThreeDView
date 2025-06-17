@@ -37,9 +37,8 @@ func NewCube(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color,
 		p3 := vertices[face[2]]
 
 		facesData[i] = FaceData{
-			Face:    [3]mgl.Vec3{p1, p2, p3},
-			Indices: [3]int{face[0], face[1], face[2]},
-			Color:   color,
+			Face:  [3]mgl.Vec3{p1, p2, p3},
+			Color: color,
 		}
 	}
 
@@ -166,9 +165,9 @@ func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 	w.RegisterTickMethod(func() {
 		desiredPixelSize := 40
 		screenHeight := w.GetHeight()
-		fov := w.GetCamera().Fov
+		fov := float64(w.GetCamera().Fov)
 
-		fovRad := float64(fov) * math.Pi / 180.0
+		fovRad := fov * math.Pi / 180.0
 		distance := (float64(size) / 2) / (math.Tan(fovRad/2) * (float64(desiredPixelSize) / float64(screenHeight)))
 
 		margin := desiredPixelSize * 2

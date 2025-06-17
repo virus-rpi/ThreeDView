@@ -25,7 +25,6 @@ func main() {
 		A: 255,
 	})
 	threeDEnv.SetResolutionFactor(1.0)
-	threeDEnv.SetRenderObjectOutlines(true)
 
 	object.NewPlane(5000, mgl.Vec3{
 		0,
@@ -45,7 +44,7 @@ func main() {
 	cube := object.NewCube(100, mgl.Vec3{
 		0,
 		0,
-		51,
+		55,
 	},
 		mgl.QuatIdent(),
 		color.RGBA{
