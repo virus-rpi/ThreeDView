@@ -26,24 +26,18 @@ func (camera *Camera) SetController(controller Controller) {
 
 // Project projects a 3D point to a 2D point on the screen using mgl
 func (camera *Camera) Project(point mgl.Vec3, width, height Pixel) Point2D {
-	rot := camera.Rotation.Mat4()
-	trans := mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z())
-	view := rot.Mul4(trans)
-
+	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
 	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
-
 	win := mgl.Project(point, view, proj, 0, 0, int(width), int(height))
-	return Point2D{X: Pixel(win.X()), Y: Pixel(float64(height) - win.Y())} // flip Y for screen space
+	return Point2D{X: Pixel(win.X()), Y: Pixel(float64(height) - win.Y())}
 }
 
 // UnProject returns a point at a given distance from the camera along the ray through the screen point
 func (camera *Camera) UnProject(point2d Point2D, distance Unit, width, height Pixel) mgl.Vec3 {
 	winNear := mgl.Vec3{float64(point2d.X), float64(height) - float64(point2d.Y), 0.0}
 	winFar := mgl.Vec3{float64(point2d.X), float64(height) - float64(point2d.Y), 1.0}
-	rot := camera.Rotation.Mat4()
-	trans := mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z())
-	view := rot.Mul4(trans)
+	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
 	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
 	nearPoint, _ := mgl.UnProject(winNear, view, proj, 0, 0, int(width), int(height))
@@ -54,17 +48,13 @@ func (camera *Camera) UnProject(point2d Point2D, distance Unit, width, height Pi
 
 // FaceOverlapsFrustum returns true if any part of the face is inside the camera frustum
 func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
-	rot := camera.Rotation.Mat4()
-	trans := mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z())
-	view := rot.Mul4(trans)
+	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
 	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
 
 	projected := [3]mgl.Vec3{}
 	for i := 0; i < 3; i++ {
-		v := face[i]
-		win := mgl.Project(v, view, proj, 0, 0, int(width), int(height))
-		projected[i] = win
+		projected[i] = mgl.Project(face[i], view, proj, 0, 0, int(width), int(height))
 	}
 
 	for i := 0; i < 3; i++ {
@@ -75,14 +65,13 @@ func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
 	}
 
 	testEdge := func(p1, p2 mgl.Vec3) bool {
-		xmin, xmax := 0.0, float64(width)
-		ymin, ymax := 0.0, float64(height)
-		for _, edge := range [][2]mgl.Vec2{
-			{{xmin, ymin}, {xmax, ymin}}, // top
-			{{xmax, ymin}, {xmax, ymax}}, // right
-			{{xmax, ymax}, {xmin, ymax}}, // bottom
-			{{xmin, ymax}, {xmin, ymin}}, // left
-		} {
+		screenEdges := [][2]mgl.Vec2{
+			{{0, 0}, {float64(width), 0}},
+			{{float64(width), 0}, {float64(width), float64(height)}},
+			{{float64(width), float64(height)}, {0, float64(height)}},
+			{{0, float64(height)}, {0, 0}},
+		}
+		for _, edge := range screenEdges {
 			if linesIntersect(
 				mgl.Vec2{p1.X(), p1.Y()}, mgl.Vec2{p2.X(), p2.Y()},
 				edge[0], edge[1],
