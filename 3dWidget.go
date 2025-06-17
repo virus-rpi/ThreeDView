@@ -36,6 +36,7 @@ type ThreeDWidget struct {
 	renderFaceColors   bool          // Whether the faces should be rendered with colors
 	fpsCap             float64       // The maximum frames per second the widget should render at
 	tpsCap             float64       // The maximum ticks per second the widget should tick at
+	renderSilhouettes  bool          // Whether there should be a thick silhouette around the objects
 }
 
 // NewThreeDWidget creates a new 3D widget
@@ -163,6 +164,11 @@ func (w *ThreeDWidget) SetRenderFaceColors(newVal bool) {
 	w.renderFaceColors = newVal
 }
 
+// SetRenderSilhouettes sets whether the objects should be rendered with thick outlines.
+func (w *ThreeDWidget) SetRenderSilhouettes(newVal bool) {
+	w.renderSilhouettes = newVal
+}
+
 func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 	return &threeDRenderer{image: w.image}
 }
@@ -176,6 +182,18 @@ func (w *ThreeDWidget) render() image.Image {
 		zBuffer[i] = make([]float64, Height)
 		for j := range zBuffer[i] {
 			zBuffer[i][j] = math.Inf(1) // Initialize to the farthest possible
+		}
+	}
+
+	if w.renderSilhouettes {
+		camPos := w.camera.Position
+		for _, object := range w.objects {
+			edges := object.GetSilhouetteEdges(camPos)
+			for _, edge := range edges {
+				p1 := w.camera.Project(edge[0], Width, Height)
+				p2 := w.camera.Project(edge[1], Width, Height)
+				thickLine(img, int(p1[0]), int(p1[1]), int(p2[0]), int(p2[1]), color.Black, 4)
+			}
 		}
 	}
 
@@ -427,6 +445,45 @@ func drawFilledTriangleZ(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor
 					img.Set(x, int(yf), fillColor)
 				}
 			}
+		}
+	}
+}
+
+func thickLine(img *image.RGBA, x0, y0, x1, y1 int, col color.Color, thickness int) {
+	for dx := -thickness / 2; dx <= thickness/2; dx++ {
+		for dy := -thickness / 2; dy <= thickness/2; dy++ {
+			line(img, x0+dx, y0+dy, x1+dx, y1+dy, col)
+		}
+	}
+}
+
+func line(img *image.RGBA, x0, y0, x1, y1 int, col color.Color) {
+	dx := math.Abs(float64(x1 - x0))
+	dy := math.Abs(float64(y1 - y0))
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	sy := -1
+	if y0 < y1 {
+		sy = 1
+	}
+	err := dx - dy
+	for {
+		if x0 >= 0 && x0 < img.Bounds().Dx() && y0 >= 0 && y0 < img.Bounds().Dy() {
+			img.Set(x0, y0, col)
+		}
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x0 += sx
+		}
+		if e2 < dx {
+			err += dx
+			y0 += sy
 		}
 	}
 }

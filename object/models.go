@@ -36,7 +36,11 @@ func NewCube(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color,
 		p2 := vertices[face[1]]
 		p3 := vertices[face[2]]
 
-		facesData[i] = FaceData{Face: [3]mgl.Vec3{p1, p2, p3}, Color: color}
+		facesData[i] = FaceData{
+			Face:    [3]mgl.Vec3{p1, p2, p3},
+			Indices: [3]int{face[0], face[1], face[2]},
+			Color:   color,
+		}
 	}
 
 	cube := Object{
