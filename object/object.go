@@ -3,6 +3,7 @@ package object
 import (
 	. "ThreeDView/camera"
 	. "ThreeDView/types"
+	mgl "github.com/go-gl/mathgl/mgl64"
 	"image/color"
 	"sync"
 )
@@ -32,8 +33,8 @@ type ProjectedFaceData struct {
 // Object represents a 3D shape in world space
 type Object struct {
 	Faces    []FaceData            // Faces of the Object in local space
-	Rotation Quaternion            // Rotation of the Object in world space (now quaternion)
-	Position Point3D               // Position of the Object in world space
+	Rotation mgl.Quat              // Rotation of the Object in world space (now quaternion)
+	Position mgl.Vec3              // Position of the Object in world space
 	Widget   ThreeDWidgetInterface // The Widget the Object is in
 }
 
@@ -45,7 +46,7 @@ func (object *Object) GetFaces() []FaceData {
 	for i, face := range object.Faces {
 		go func(i int, face FaceData) {
 			defer wg.Done()
-			face.Face.Rotate(Point3D{}, object.Rotation)
+			face.Face.Rotate(mgl.Vec3{}, object.Rotation)
 			face.Face.Add(object.Position)
 			face.Distance = face.Face.DistanceTo(object.Widget.GetCamera().Position)
 			faces[i] = face
@@ -55,10 +56,10 @@ func (object *Object) GetFaces() []FaceData {
 	return faces
 }
 
-func (object *Object) GetPosition() Point3D {
+func (object *Object) GetPosition() mgl.Vec3 {
 	return object.Position
 }
 
-func (object *Object) GetRotation() Quaternion {
+func (object *Object) GetRotation() mgl.Quat {
 	return object.Rotation
 }

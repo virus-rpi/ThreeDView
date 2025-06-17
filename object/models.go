@@ -2,21 +2,23 @@ package object
 
 import (
 	. "ThreeDView/types"
+	mgl "github.com/go-gl/mathgl/mgl64"
 	"image/color"
 	"math"
 )
 
-func NewCube(size Unit, position Point3D, rotation Quaternion, color color.Color, w ThreeDWidgetInterface) *Object {
-	half := size / 2
-	vertices := []Point3D{
-		{X: -half, Y: -half, Z: -half},
-		{X: half, Y: -half, Z: -half},
-		{X: half, Y: half, Z: -half},
-		{X: -half, Y: half, Z: -half},
-		{X: -half, Y: -half, Z: half},
-		{X: half, Y: -half, Z: half},
-		{X: half, Y: half, Z: half},
-		{X: -half, Y: half, Z: half},
+// NewCube creates a cube object with the given size, position, rotation, and color
+func NewCube(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface) *Object {
+	half := float64(size) / 2
+	vertices := []mgl.Vec3{
+		{-half, -half, -half},
+		{half, -half, -half},
+		{half, half, -half},
+		{-half, half, -half},
+		{-half, -half, half},
+		{half, -half, half},
+		{half, half, half},
+		{-half, half, half},
 	}
 	faces := [][3]int{
 		{0, 1, 2}, {0, 2, 3},
@@ -34,7 +36,7 @@ func NewCube(size Unit, position Point3D, rotation Quaternion, color color.Color
 		p2 := vertices[face[1]]
 		p3 := vertices[face[2]]
 
-		facesData[i] = FaceData{Face: [3]Point3D{p1, p2, p3}, Color: color}
+		facesData[i] = FaceData{Face: [3]mgl.Vec3{p1, p2, p3}, Color: color}
 	}
 
 	cube := Object{
@@ -47,16 +49,17 @@ func NewCube(size Unit, position Point3D, rotation Quaternion, color color.Color
 	return &cube
 }
 
-func NewPlane(size Unit, position Point3D, rotation Quaternion, color color.Color, w ThreeDWidgetInterface, resolution int) *Object {
+// NewPlane creates a plane object with the given size, position, rotation, color, and resolution
+func NewPlane(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface, resolution int) *Object {
 	half := size / 2
 	step := size / Unit(resolution)
-	var vertices []Point3D
+	var vertices []mgl.Vec3
 	for i := 0; i <= resolution; i++ {
 		for j := 0; j <= resolution; j++ {
-			vertices = append(vertices, Point3D{
-				X: -half + Unit(i)*step,
-				Y: -half + Unit(j)*step,
-				Z: 0,
+			vertices = append(vertices, mgl.Vec3{
+				float64(-half + Unit(i)*step),
+				float64(-half + Unit(j)*step),
+				0,
 			})
 		}
 	}
@@ -81,7 +84,7 @@ func NewPlane(size Unit, position Point3D, rotation Quaternion, color color.Colo
 		p2 := vertices[face[1]]
 		p3 := vertices[face[2]]
 
-		facesData[i] = FaceData{Face: [3]Point3D{p1, p2, p3}, Color: color}
+		facesData[i] = FaceData{Face: [3]mgl.Vec3{p1, p2, p3}, Color: color}
 	}
 
 	plane := Object{
@@ -94,56 +97,57 @@ func NewPlane(size Unit, position Point3D, rotation Quaternion, color color.Colo
 	return &plane
 }
 
+// NewOrientationObject creates an orientation object with arrows for X, Y, and Z axes
 func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 	size := Unit(2)
 	thickness := size / 20
 
 	faces := []FaceData{
 		{
-			Face: [3]Point3D{
-				{X: 0, Y: -thickness, Z: -thickness},
-				{X: size, Y: -thickness, Z: -thickness},
-				{X: 0, Y: thickness, Z: -thickness},
+			Face: [3]mgl.Vec3{
+				{0, -float64(thickness), -float64(thickness)},
+				{float64(size), -float64(thickness), -float64(thickness)},
+				{0, float64(thickness), -float64(thickness)},
 			},
 			Color: color.RGBA{R: 255, A: 255},
 		},
 		{
-			Face: [3]Point3D{
-				{X: size, Y: -thickness, Z: -thickness},
-				{X: size, Y: thickness, Z: -thickness},
-				{X: 0, Y: thickness, Z: -thickness},
+			Face: [3]mgl.Vec3{
+				{float64(size), -float64(thickness), -float64(thickness)},
+				{float64(size), float64(thickness), -float64(thickness)},
+				{0, float64(thickness), -float64(thickness)},
 			},
 			Color: color.RGBA{R: 255, A: 255},
 		},
 		{
-			Face: [3]Point3D{
-				{X: -thickness, Y: 0, Z: -thickness},
-				{X: -thickness, Y: size, Z: -thickness},
-				{X: thickness, Y: 0, Z: -thickness},
+			Face: [3]mgl.Vec3{
+				{-float64(thickness), 0, -float64(thickness)},
+				{-float64(thickness), float64(size), -float64(thickness)},
+				{float64(thickness), 0, -float64(thickness)},
 			},
 			Color: color.RGBA{R: 255, G: 255, A: 255},
 		},
 		{
-			Face: [3]Point3D{
-				{X: -thickness, Y: size, Z: -thickness},
-				{X: thickness, Y: size, Z: -thickness},
-				{X: thickness, Y: 0, Z: -thickness},
+			Face: [3]mgl.Vec3{
+				{-float64(thickness), float64(size), -float64(thickness)},
+				{float64(thickness), float64(size), -float64(thickness)},
+				{float64(thickness), 0, -float64(thickness)},
 			},
 			Color: color.RGBA{R: 255, G: 255, A: 255},
 		},
 		{
-			Face: [3]Point3D{
-				{X: -thickness, Y: -thickness, Z: 0},
-				{X: -thickness, Y: -thickness, Z: size},
-				{X: thickness, Y: -thickness, Z: 0},
+			Face: [3]mgl.Vec3{
+				{-float64(thickness), -float64(thickness), 0},
+				{-float64(thickness), -float64(thickness), float64(size)},
+				{float64(thickness), -float64(thickness), 0},
 			},
 			Color: color.RGBA{B: 255, A: 255},
 		},
 		{
-			Face: [3]Point3D{
-				{X: -thickness, Y: -thickness, Z: size},
-				{X: thickness, Y: -thickness, Z: size},
-				{X: thickness, Y: -thickness, Z: 0},
+			Face: [3]mgl.Vec3{
+				{-float64(thickness), -float64(thickness), float64(size)},
+				{float64(thickness), -float64(thickness), float64(size)},
+				{float64(thickness), -float64(thickness), 0},
 			},
 			Color: color.RGBA{B: 255, A: 255},
 		},
@@ -151,8 +155,8 @@ func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 
 	orientationObject := Object{
 		Faces:    faces,
-		Position: Point3D{},
-		Rotation: IdentityQuaternion(),
+		Position: mgl.Vec3{0, 0, 0},
+		Rotation: mgl.QuatIdent(),
 		Widget:   w,
 	}
 	w.RegisterTickMethod(func() {
@@ -162,49 +166,51 @@ func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 	return &orientationObject
 }
 
-func NewEmpty(w ThreeDWidgetInterface, position Point3D) *Object {
+// NewEmpty creates an empty Object with no faces, useful for markers or placeholders
+func NewEmpty(w ThreeDWidgetInterface, position mgl.Vec3) *Object {
 	empty := Object{
 		Faces:    nil,
 		Position: position,
-		Rotation: IdentityQuaternion(),
+		Rotation: mgl.QuatIdent(),
 		Widget:   w,
 	}
 	w.AddObject(&empty)
 	return &empty
 }
 
-func NewCylinder(position Point3D, rotation Quaternion, color color.Color, w ThreeDWidgetInterface, height, radius Unit) *Object {
+// NewCylinder creates a sphere object with the given position, rotation, color, and radius
+func NewCylinder(position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface, height, radius Unit) *Object {
 	var faces []FaceData
 	for i := 0; i < 360; i += 20 {
-		angle1 := Degrees(i).ToRadians()
-		angle2 := Degrees(i + 20).ToRadians()
-		p1 := Point3D{
-			X: radius * Unit(math.Cos(float64(angle1))),
-			Y: radius * Unit(math.Sin(float64(angle1))),
-			Z: -height / 2,
+		angle1 := float64(i) * math.Pi / 180
+		angle2 := float64(i+20) * math.Pi / 180
+		p1 := mgl.Vec3{
+			float64(radius) * math.Cos(angle1),
+			float64(radius) * math.Sin(angle1),
+			-float64(height) / 2,
 		}
-		p2 := Point3D{
-			X: radius * Unit(math.Cos(float64(angle1))),
-			Y: radius * Unit(math.Sin(float64(angle1))),
-			Z: height / 2,
+		p2 := mgl.Vec3{
+			float64(radius) * math.Cos(angle1),
+			float64(radius) * math.Sin(angle1),
+			float64(height) / 2,
 		}
-		p3 := Point3D{
-			X: radius * Unit(math.Cos(float64(angle2))),
-			Y: radius * Unit(math.Sin(float64(angle2))),
-			Z: height / 2,
+		p3 := mgl.Vec3{
+			float64(radius) * math.Cos(angle2),
+			float64(radius) * math.Sin(angle2),
+			float64(height) / 2,
 		}
-		p4 := Point3D{
-			X: radius * Unit(math.Cos(float64(angle2))),
-			Y: radius * Unit(math.Sin(float64(angle2))),
-			Z: -height / 2,
+		p4 := mgl.Vec3{
+			float64(radius) * math.Cos(angle2),
+			float64(radius) * math.Sin(angle2),
+			-float64(height) / 2,
 		}
 		sideFaces := []FaceData{
 			{
-				Face:  [3]Point3D{p1, p2, p3},
+				Face:  [3]mgl.Vec3{p1, p2, p3},
 				Color: color,
 			},
 			{
-				Face:  [3]Point3D{p1, p3, p4},
+				Face:  [3]mgl.Vec3{p1, p3, p4},
 				Color: color,
 			},
 		}
@@ -221,30 +227,31 @@ func NewCylinder(position Point3D, rotation Quaternion, color color.Color, w Thr
 	return &cylinder
 }
 
-func NewCone(position Point3D, rotation Quaternion, color color.Color, w ThreeDWidgetInterface, height, radius Unit) *Object {
+// NewCone creates a cone object with the given position, rotation, color, and radius
+func NewCone(position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface, height, radius Unit) *Object {
 	var faces []FaceData
 
 	for i := 0; i < 360; i += 20 {
-		angle1 := Degrees(i).ToRadians()
-		angle2 := Degrees(i + 20).ToRadians()
-		p1 := Point3D{
-			X: 0,
-			Y: 0,
-			Z: height / 2,
+		angle1 := float64(i) * math.Pi / 180
+		angle2 := float64(i+20) * math.Pi / 180
+		p1 := mgl.Vec3{
+			0,
+			0,
+			float64(height) / 2,
 		}
-		p2 := Point3D{
-			X: radius * Unit(math.Cos(float64(angle1))),
-			Y: radius * Unit(math.Sin(float64(angle1))),
-			Z: -height / 2,
+		p2 := mgl.Vec3{
+			float64(radius) * math.Cos(angle1),
+			float64(radius) * math.Sin(angle1),
+			-float64(height) / 2,
 		}
-		p3 := Point3D{
-			X: radius * Unit(math.Cos(float64(angle2))),
-			Y: radius * Unit(math.Sin(float64(angle2))),
-			Z: -height / 2,
+		p3 := mgl.Vec3{
+			float64(radius) * math.Cos(angle2),
+			float64(radius) * math.Sin(angle2),
+			-float64(height) / 2,
 		}
 		sideFaces := []FaceData{
 			{
-				Face:  [3]Point3D{p1, p2, p3},
+				Face:  [3]mgl.Vec3{p1, p2, p3},
 				Color: color,
 			},
 		}

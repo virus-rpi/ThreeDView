@@ -4,9 +4,9 @@ import (
 	"ThreeDView"
 	"ThreeDView/camera"
 	"ThreeDView/object"
-	"ThreeDView/types"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	mgl "github.com/go-gl/mathgl/mgl64"
 	"image/color"
 )
 
@@ -27,12 +27,12 @@ func main() {
 	threeDEnv.SetResolutionFactor(1.0)
 	threeDEnv.SetRenderFaceOutlines(true)
 
-	object.NewPlane(5000, types.Point3D{
-		X: 0,
-		Y: 0,
-		Z: 0,
+	object.NewPlane(5000, mgl.Vec3{
+		0,
+		0,
+		0,
 	},
-		types.IdentityQuaternion(),
+		mgl.QuatIdent(),
 		color.RGBA{
 			R: 0,
 			G: 255,
@@ -42,12 +42,12 @@ func main() {
 		threeDEnv,
 		1)
 
-	cube := object.NewCube(100, types.Point3D{
-		X: 0,
-		Y: 0,
-		Z: 50,
+	cube := object.NewCube(100, mgl.Vec3{
+		0,
+		0,
+		50,
 	},
-		types.IdentityQuaternion(),
+		mgl.QuatIdent(),
 		color.RGBA{
 			R: 255,
 			G: 0,
@@ -57,11 +57,11 @@ func main() {
 
 	object.NewOrientationObject(threeDEnv)
 
-	envCamera := camera.NewCamera(types.Point3D{
-		X: 500,
-		Y: 0,
-		Z: 200,
-	}, types.IdentityQuaternion())
+	envCamera := camera.NewCamera(mgl.Vec3{
+		500,
+		0,
+		200,
+	}, mgl.QuatIdent())
 	orbitController := camera.NewOrbitController(cube)
 	envCamera.SetController(orbitController)
 	threeDEnv.SetCamera(&envCamera)

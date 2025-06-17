@@ -6,19 +6,20 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
+	mgl "github.com/go-gl/mathgl/mgl64"
 	"math"
 	"time"
 )
 
 type ObjectInterface interface {
-	GetPosition() Point3D
+	GetPosition() mgl.Vec3
 }
 
 // OrbitController is a controller that allows the camera to orbit around a target Object
 type OrbitController struct {
 	BaseController
 	target          ObjectInterface // The Object the camera is orbiting around in world space
-	rotation        Quaternion      // The rotation of the camera around the target in world space (quaternion)
+	rotation        mgl.Quat        // The rotation of the camera around the target in world space (quaternion)
 	distance        Unit            // The distance of the camera from the target
 	controlsEnabled bool            // Whether the controls are enabled (dragging, scrolling)
 }
@@ -28,7 +29,7 @@ func NewOrbitController(target ObjectInterface) *OrbitController {
 	return &OrbitController{
 		target:          target,
 		distance:        500,
-		rotation:        IdentityQuaternion(),
+		rotation:        mgl.QuatIdent(),
 		controlsEnabled: true,
 	}
 }
@@ -61,13 +62,13 @@ func (controller *OrbitController) Move(distance Unit) {
 }
 
 // Rotate applies a quaternion delta to the current rotation
-func (controller *OrbitController) Rotate(q Quaternion) {
-	controller.rotation = q.Multiply(controller.rotation)
+func (controller *OrbitController) Rotate(q mgl.Quat) {
+	controller.rotation = q.Mul(controller.rotation)
 	controller.Update()
 }
 
 // SetRotation sets the absolute rotation
-func (controller *OrbitController) SetRotation(q Quaternion) {
+func (controller *OrbitController) SetRotation(q mgl.Quat) {
 	controller.rotation = q
 	controller.Update()
 }
@@ -79,9 +80,9 @@ func (controller *OrbitController) OnDrag(dx, dy float32) {
 	}
 	const yawSensitivity = 0.01
 	const pitchSensitivity = 0.01
-	qYaw := FromAxisAngle(Point3D{X: 0, Y: 1, Z: 0}, float64(dx)*yawSensitivity)
-	qPitch := FromAxisAngle(Point3D{X: 1, Y: 0, Z: 0}, float64(-dy)*pitchSensitivity)
-	controller.Rotate(qYaw.Multiply(qPitch))
+	qYaw := mgl.QuatRotate(float64(dx)*yawSensitivity, mgl.Vec3{0, 1, 0})
+	qPitch := mgl.QuatRotate(float64(-dy)*pitchSensitivity, mgl.Vec3{1, 0, 0})
+	controller.Rotate(qYaw.Mul(qPitch))
 }
 
 func (controller *OrbitController) OnDragEnd() {}
@@ -96,7 +97,7 @@ func (controller *OrbitController) OnScroll(_, y float32) {
 // Update recalculates the camera's position and orientation
 func (controller *OrbitController) Update() {
 	controller.updatePosition()
-	controller.lookAtTarget()
+	// controller.lookAtTarget()
 }
 
 func (controller *OrbitController) updatePosition() {
@@ -104,9 +105,9 @@ func (controller *OrbitController) updatePosition() {
 		return
 	}
 	center := controller.target.GetPosition()
-	pos := Point3D{X: 0, Y: 0, Z: controller.distance}
-	pos = controller.rotation.RotatePoint(pos)
-	pos.Add(center)
+	pos := mgl.Vec3{0, 0, float64(controller.distance)}
+	pos = controller.rotation.Rotate(pos)
+	pos = pos.Add(center)
 	controller.camera.Position = pos
 }
 
@@ -116,64 +117,8 @@ func (controller *OrbitController) lookAtTarget() {
 	}
 	center := controller.target.GetPosition()
 	cameraPos := controller.camera.Position
-	dir := Point3D{
-		X: center.X - cameraPos.X,
-		Y: center.Y - cameraPos.Y,
-		Z: center.Z - cameraPos.Z,
-	}
-	length := math.Sqrt(float64(dir.X*dir.X + dir.Y*dir.Y + dir.Z*dir.Z))
-	if length == 0 {
-		controller.camera.Rotation = IdentityQuaternion()
-		return
-	}
-	dir.X /= Unit(length)
-	dir.Y /= Unit(length)
-	dir.Z /= Unit(length)
-
-	up := Point3D{X: 0, Y: 1, Z: 0}
-	if math.Abs(float64(dir.X*up.X+dir.Y*up.Y+dir.Z*up.Z)) > 0.999 {
-		up = Point3D{X: 0, Y: 0, Z: 1}
-	}
-	side := up.Cross(dir)
-	upn := dir.Cross(side)
-	m00 := float64(side.X)
-	m01 := float64(upn.X)
-	m02 := -float64(dir.X)
-	m10 := float64(side.Y)
-	m11 := float64(upn.Y)
-	m12 := -float64(dir.Y)
-	m20 := float64(side.Z)
-	m21 := float64(upn.Z)
-	m22 := -float64(dir.Z)
-	tr := m00 + m11 + m22
-	var q Quaternion
-	if tr > 0 {
-		s := math.Sqrt(tr+1.0) * 2
-		q.W = 0.25 * s
-		q.X = (m21 - m12) / s
-		q.Y = (m02 - m20) / s
-		q.Z = (m10 - m01) / s
-	} else if m00 > m11 && m00 > m22 {
-		s := math.Sqrt(1.0+m00-m11-m22) * 2
-		q.W = (m21 - m12) / s
-		q.X = 0.25 * s
-		q.Y = (m01 + m10) / s
-		q.Z = (m02 + m20) / s
-	} else if m11 > m22 {
-		s := math.Sqrt(1.0+m11-m00-m22) * 2
-		q.W = (m02 - m20) / s
-		q.X = (m01 + m10) / s
-		q.Y = 0.25 * s
-		q.Z = (m12 + m21) / s
-	} else {
-		s := math.Sqrt(1.0+m22-m00-m11) * 2
-		q.W = (m10 - m01) / s
-		q.X = (m02 + m20) / s
-		q.Y = (m12 + m21) / s
-		q.Z = 0.25 * s
-	}
-	q.Normalize()
-	controller.camera.Rotation = q
+	up := mgl.Vec3{0, 0, 1}
+	controller.camera.Rotation = mgl.QuatLookAtV(cameraPos, center, up)
 }
 
 // ManualController is a controller that allows the camera to be manually controlled. Useful for debugging
@@ -190,18 +135,18 @@ func NewManualController() *ManualController {
 func (controller *ManualController) GetRotationSlider() *fyne.Container {
 	sliderYaw := widget.NewSlider(0, 360)
 	sliderYaw.OnChanged = func(value float64) {
-		q := FromAxisAngle(Point3D{X: 0, Y: 1, Z: 0}, value*math.Pi/180)
-		controller.camera.Rotation = q.Multiply(controller.camera.Rotation)
+		q := mgl.QuatRotate(value*math.Pi/180, mgl.Vec3{0, 1, 0})
+		controller.camera.Rotation = q.Mul(controller.camera.Rotation)
 	}
 	sliderPitch := widget.NewSlider(0, 360)
 	sliderPitch.OnChanged = func(value float64) {
-		q := FromAxisAngle(Point3D{X: 1, Y: 0, Z: 0}, value*math.Pi/180)
-		controller.camera.Rotation = q.Multiply(controller.camera.Rotation)
+		q := mgl.QuatRotate(value*math.Pi/180, mgl.Vec3{1, 0, 0})
+		controller.camera.Rotation = q.Mul(controller.camera.Rotation)
 	}
 	sliderRoll := widget.NewSlider(0, 360)
 	sliderRoll.OnChanged = func(value float64) {
-		q := FromAxisAngle(Point3D{X: 0, Y: 0, Z: 1}, value*math.Pi/180)
-		controller.camera.Rotation = q.Multiply(controller.camera.Rotation)
+		q := mgl.QuatRotate(value*math.Pi/180, mgl.Vec3{0, 0, 1})
+		controller.camera.Rotation = q.Mul(controller.camera.Rotation)
 	}
 	sliderContainer := container.NewVBox(sliderYaw, sliderPitch, sliderRoll)
 	return sliderContainer
@@ -212,9 +157,9 @@ func (controller *ManualController) GetPositionControl() *fyne.Container {
 	sliderX := widget.NewSlider(-100, 100)
 	sliderX.OnChanged = func(value float64) {
 		if value > 0 {
-			controller.camera.Position.X += 10
+			controller.camera.Position[0] += 10
 		} else {
-			controller.camera.Position.X -= 10
+			controller.camera.Position[0] -= 10
 		}
 	}
 	sliderX.OnChangeEnded = func(value float64) {
@@ -224,9 +169,9 @@ func (controller *ManualController) GetPositionControl() *fyne.Container {
 	sliderY := widget.NewSlider(-100, 100)
 	sliderY.OnChanged = func(value float64) {
 		if value > 0 {
-			controller.camera.Position.Y += 10
+			controller.camera.Position[1] += 10
 		} else {
-			controller.camera.Position.Y -= 10
+			controller.camera.Position[1] -= 10
 		}
 	}
 	sliderY.OnChangeEnded = func(value float64) {
@@ -236,9 +181,9 @@ func (controller *ManualController) GetPositionControl() *fyne.Container {
 	sliderZ := widget.NewSlider(-100, 100)
 	sliderZ.OnChanged = func(value float64) {
 		if value > 0 {
-			controller.camera.Position.Z += 10
+			controller.camera.Position[2] += 10
 		} else {
-			controller.camera.Position.Z -= 10
+			controller.camera.Position[2] -= 10
 		}
 	}
 	sliderZ.OnChangeEnded = func(value float64) {
@@ -262,8 +207,8 @@ func (controller *ManualController) GetInfoLabel() *widget.Label {
 		for range ticker.C {
 			q := controller.camera.Rotation
 			label.SetText(fmt.Sprintf("X: %.2f Y: %.2f Z: %.2f      Q: (%.2f, %.2f, %.2f, %.2f)",
-				controller.camera.Position.X, controller.camera.Position.Y, controller.camera.Position.Z,
-				q.W, q.X, q.Y, q.Z))
+				controller.camera.Position.X(), controller.camera.Position.Y(), controller.camera.Position.Z(),
+				q.W, q.X(), q.Y(), q.Z()))
 			label.Refresh()
 		}
 	}()

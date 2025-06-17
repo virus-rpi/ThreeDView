@@ -2,19 +2,19 @@ package camera
 
 import (
 	. "ThreeDView/types"
-	"math"
+	mgl "github.com/go-gl/mathgl/mgl64"
 )
 
 // Camera represents a camera in 3D space
 type Camera struct {
-	Position   Point3D    // Camera position in world space in units
+	Position   mgl.Vec3   // Camera position in world space in units
 	Fov        Degrees    // Field of view in degrees
-	Rotation   Quaternion // Camera rotation as a quaternion
+	Rotation   mgl.Quat   // Camera rotation as a quaternion
 	Controller Controller // Camera Controller
 }
 
 // NewCamera creates a new camera at the given position in world space and rotation in camera space
-func NewCamera(position Point3D, rotation Quaternion) Camera {
+func NewCamera(position mgl.Vec3, rotation mgl.Quat) Camera {
 	return Camera{Position: position, Rotation: rotation, Fov: 90}
 }
 
@@ -24,95 +24,104 @@ func (camera *Camera) SetController(controller Controller) {
 	controller.setCamera(camera)
 }
 
-// Project projects a 3D point to a 2D point on the screen
-func (camera *Camera) Project(point Point3D, width, height Pixel) Point2D {
-	translatedPoint := point
-	translatedPoint.Subtract(camera.Position)
-	translatedPoint = camera.Rotation.RotatePoint(translatedPoint)
+// Project projects a 3D point to a 2D point on the screen using mgl
+func (camera *Camera) Project(point mgl.Vec3, width, height Pixel) Point2D {
+	rot := camera.Rotation.Mat4()
+	trans := mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z())
+	view := rot.Mul4(trans)
 
-	epsilon := Unit(0.0001)
-	if math.Abs(float64(translatedPoint.Z)) < float64(epsilon) {
-		translatedPoint.Z = epsilon
-	}
+	aspect := float64(width) / float64(height)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
 
-	fovRadians := camera.Fov.ToRadians()
-	scale := Unit(float64(width) / (2 * math.Tan(float64(fovRadians/2))))
-
-	x2D := (translatedPoint.X * scale / translatedPoint.Z) + Unit(width)/2
-	y2D := (translatedPoint.Y * scale / translatedPoint.Z) + Unit(height)/2
-
-	return Point2D{X: Pixel(x2D), Y: Pixel(y2D)}
+	win := mgl.Project(point, view, proj, 0, 0, int(width), int(height))
+	return Point2D{X: Pixel(win.X()), Y: Pixel(float64(height) - win.Y())} // flip Y for screen space
 }
 
-// UnProject un-projects a 2D point on the screen to a 3D point in world space
-func (camera *Camera) UnProject(point2d Point2D, distance Unit, width, height Pixel) Point3D {
-	fovRadians := camera.Fov.ToRadians()
-	halfWidth := float64(width) / 2
-	halfHeight := float64(height) / 2
-	scale := math.Tan(float64(fovRadians)/2) * float64(distance)
-
-	pointInCameraSpace := Point3D{
-		X: Unit((float64(point2d.X) - halfWidth) / halfWidth * scale),
-		Y: Unit((float64(point2d.Y) - halfHeight) / halfHeight * scale),
-		Z: distance,
-	}
-
-	// Inverse rotate using quaternion
-	inv := camera.Rotation.Conjugate()
-	pointInWorldSpace := inv.RotatePoint(pointInCameraSpace)
-	pointInWorldSpace.Add(camera.Position)
-
-	return pointInWorldSpace
+// UnProject un-projects a 2D point on the screen to a 3D point in world space using mgl
+func (camera *Camera) UnProject(point2d Point2D, distance Unit, width, height Pixel) mgl.Vec3 {
+	aspect := float64(width) / float64(height)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+	rot := camera.Rotation.Mat4()
+	trans := mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z())
+	view := rot.Mul4(trans)
+	win := mgl.Vec3{float64(point2d.X), float64(height) - float64(point2d.Y), float64(distance)}
+	world, _ := mgl.UnProject(win, view, proj, 0, 0, int(width), int(height))
+	return world
 }
 
-func (camera *Camera) FaceOverlapsFrustum(face Face) bool {
-	points := [3]Point3D{}
+// FaceOverlapsFrustum returns true if any part of the face is inside the camera frustum
+func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
+	rot := camera.Rotation.Mat4()
+	trans := mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z())
+	view := rot.Mul4(trans)
+	aspect := float64(width) / float64(height)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+
+	projected := [3]mgl.Vec3{}
 	for i := 0; i < 3; i++ {
-		p := face[i]
-		p.Subtract(camera.Position)
-		p = camera.Rotation.RotatePoint(p)
-		points[i] = p
+		v := face[i]
+		win := mgl.Project(v, view, proj, 0, 0, int(width), int(height))
+		projected[i] = win
 	}
 
-	minX, maxX := points[0].X, points[0].X
-	minY, maxY := points[0].Y, points[0].Y
-	minZ, maxZ := points[0].Z, points[0].Z
-	for i := 1; i < 3; i++ {
-		if points[i].X < minX {
-			minX = points[i].X
-		}
-		if points[i].X > maxX {
-			maxX = points[i].X
-		}
-		if points[i].Y < minY {
-			minY = points[i].Y
-		}
-		if points[i].Y > maxY {
-			maxY = points[i].Y
-		}
-		if points[i].Z < minZ {
-			minZ = points[i].Z
-		}
-		if points[i].Z > maxZ {
-			maxZ = points[i].Z
+	for i := 0; i < 3; i++ {
+		x, y := projected[i].X(), projected[i].Y()
+		if x >= 0 && x < float64(width) && y >= 0 && y < float64(height) {
+			return true
 		}
 	}
 
-	fovRadians := camera.Fov.ToRadians()
-	aspectRatio := 1.0
-	tanFovOver2 := math.Tan(float64(fovRadians) / 2)
-	near := Unit(0.1)
+	testEdge := func(p1, p2 mgl.Vec3) bool {
+		xmin, xmax := 0.0, float64(width)
+		ymin, ymax := 0.0, float64(height)
+		for _, edge := range [][2]mgl.Vec2{
+			{{xmin, ymin}, {xmax, ymin}}, // top
+			{{xmax, ymin}, {xmax, ymax}}, // right
+			{{xmax, ymax}, {xmin, ymax}}, // bottom
+			{{xmin, ymax}, {xmin, ymin}}, // left
+		} {
+			if linesIntersect(
+				mgl.Vec2{p1.X(), p1.Y()}, mgl.Vec2{p2.X(), p2.Y()},
+				edge[0], edge[1],
+			) {
+				return true
+			}
+		}
+		return false
+	}
 
-	if maxZ < near {
-		return false
+	for i := 0; i < 3; i++ {
+		if testEdge(projected[i], projected[(i+1)%3]) {
+			return true
+		}
 	}
-	rightPlaneX := maxZ * Unit(tanFovOver2*aspectRatio)
-	if minX > rightPlaneX || maxX < -rightPlaneX {
-		return false
+
+	center := mgl.Vec2{float64(width) / 2, float64(height) / 2}
+	if pointInTriangle(center, mgl.Vec2{projected[0].X(), projected[0].Y()}, mgl.Vec2{projected[1].X(), projected[1].Y()}, mgl.Vec2{projected[2].X(), projected[2].Y()}) {
+		return true
 	}
-	topPlaneY := maxZ * Unit(tanFovOver2)
-	if minY > topPlaneY || maxY < -topPlaneY {
-		return false
+
+	return false
+}
+
+func linesIntersect(p1, p2, q1, q2 mgl.Vec2) bool {
+	ccw := func(a, b, c mgl.Vec2) bool {
+		return (c.Y()-a.Y())*(b.X()-a.X()) > (b.Y()-a.Y())*(c.X()-a.X())
 	}
-	return true
+	return (ccw(p1, q1, q2) != ccw(p2, q1, q2)) && (ccw(p1, p2, q1) != ccw(p1, p2, q2))
+}
+
+func pointInTriangle(p, a, b, c mgl.Vec2) bool {
+	v0 := c.Sub(a)
+	v1 := b.Sub(a)
+	v2 := p.Sub(a)
+	dot00 := v0.Dot(v0)
+	dot01 := v0.Dot(v1)
+	dot02 := v0.Dot(v2)
+	dot11 := v1.Dot(v1)
+	dot12 := v1.Dot(v2)
+	invDenom := 1 / (dot00*dot11 - dot01*dot01)
+	u := (dot11*dot02 - dot01*dot12) * invDenom
+	v := (dot00*dot12 - dot01*dot02) * invDenom
+	return (u >= 0) && (v >= 0) && (u+v <= 1)
 }

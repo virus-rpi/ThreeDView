@@ -7,6 +7,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/widget"
+	mgl "github.com/go-gl/mathgl/mgl64"
 	"image"
 	"image/color"
 	"image/draw"
@@ -44,7 +45,7 @@ func NewThreeDWidget() *ThreeDWidget {
 	w.bgColor = color.Transparent
 	w.renderFaceOutlines = false
 	w.renderFaceColors = true
-	standardCamera := NewCamera(Point3D{}, IdentityQuaternion())
+	standardCamera := NewCamera(mgl.Vec3{}, mgl.QuatIdent())
 	w.camera = &standardCamera
 	w.objects = []*Object{}
 	w.image = canvas.NewImageFromImage(w.render())
@@ -180,7 +181,7 @@ func (w *ThreeDWidget) render() image.Image {
 			objectFaces := object.GetFaces()
 			mu3d.Lock()
 			for _, face := range objectFaces {
-				if w.camera.FaceOverlapsFrustum(face.Face) {
+				if w.camera.FaceOverlapsFrustum(face.Face, Width, Height) {
 					faces = append(faces, face)
 				}
 			}
