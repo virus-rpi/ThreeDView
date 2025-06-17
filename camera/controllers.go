@@ -115,11 +115,7 @@ func (controller *OrbitController) lookAtTarget() {
 	if controller.camera == nil || controller.target == nil {
 		return
 	}
-	center := controller.target.GetPosition()
-	cameraPos := controller.camera.Position
-	direction := center.Sub(cameraPos).Normalize()
-	up := mgl.Vec3{0, 0, 1}
-	controller.camera.Rotation = mgl.QuatLookAtV(mgl.Vec3{0, 0, 0}, direction, up)
+	controller.camera.Rotation = mgl.QuatLookAtV(controller.camera.Position, controller.target.GetPosition(), mgl.Vec3{0, 1, 0})
 }
 
 // ManualController is a controller that allows the camera to be manually controlled. Useful for debugging
@@ -228,6 +224,18 @@ func (controller *ManualController) RefreshCameraRotation() {
 	roll := controller.angles[2] * math.Pi / 180
 	qYaw := mgl.QuatRotate(yaw, mgl.Vec3{0, 1, 0})
 	qPitch := mgl.QuatRotate(pitch, mgl.Vec3{1, 0, 0})
-	qRoll := mgl.QuatRotate(roll, mgl.Vec3{0, 0, 1})
+	qRoll := mgl.QuatRotate(roll, mgl.Vec3{0, 0, -1})
 	controller.camera.Rotation = qYaw.Mul(qPitch).Mul(qRoll)
+}
+
+func (controller *ManualController) ShowControlWindow() {
+	w := fyne.CurrentApp().NewWindow("Manual Camera Controls")
+	w.SetContent(container.NewVBox(
+		widget.NewLabel("Manual Camera Controls"),
+		controller.GetRotationSlider(),
+		controller.GetPositionControl(),
+		controller.GetInfoLabel(),
+	))
+	w.Resize(fyne.NewSize(400, 300))
+	w.Show()
 }
