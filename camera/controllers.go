@@ -117,30 +117,24 @@ func (controller *OrbitController) updatePosition() {
 
 // LookRotationQuaternion returns a quaternion that rotates the forward vector (0,0,1) to lookDir, using up as the up direction
 func LookRotationQuaternion(lookDir, up Point3D) Quaternion {
-	// Normalize lookDir
 	mag := math.Sqrt(float64(lookDir.X*lookDir.X + lookDir.Y*lookDir.Y + lookDir.Z*lookDir.Z))
 	if mag == 0 {
 		return IdentityQuaternion()
 	}
 	f := Point3D{X: lookDir.X / Unit(mag), Y: lookDir.Y / Unit(mag), Z: lookDir.Z / Unit(mag)}
-	// Normalize up
 	upMag := math.Sqrt(float64(up.X*up.X + up.Y*up.Y + up.Z*up.Z))
 	if upMag == 0 {
 		up = Point3D{X: 0, Y: 1, Z: 0}
 	} else {
 		up = Point3D{X: up.X / Unit(upMag), Y: up.Y / Unit(upMag), Z: up.Z / Unit(upMag)}
 	}
-	// Right vector
 	r := f.Cross(up)
-	// Recompute up to ensure orthogonality
 	u := r.Cross(f)
-	// Rotation matrix (columns: right, up, -forward)
 	m := [3][3]float64{
 		{float64(r.X), float64(u.X), -float64(f.X)},
 		{float64(r.Y), float64(u.Y), -float64(f.Y)},
 		{float64(r.Z), float64(u.Z), -float64(f.Z)},
 	}
-	// Convert rotation matrix to quaternion
 	tr := m[0][0] + m[1][1] + m[2][2]
 	var q Quaternion
 	if tr > 0 {

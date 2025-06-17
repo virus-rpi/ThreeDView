@@ -91,24 +91,3 @@ func (camera *Camera) IsInFrustum(point Point3D) bool {
 
 	return true
 }
-
-func (camera *Camera) GetRightVector() DirectionVector {
-	rotationMatrix := camera.Rotation.ToRotationMatrix()
-	return DirectionVector{Point3D: Point3D{
-		X: Unit(rotationMatrix[0][0]),
-		Y: Unit(rotationMatrix[1][0]),
-		Z: Unit(rotationMatrix[2][0]),
-	},
-	}
-}
-
-// GetUpVector returns the up vector of the camera
-func (camera *Camera) GetUpVector() DirectionVector {
-	rotationMatrix := camera.Rotation.ToRotationMatrix()
-	return DirectionVector{Point3D: Point3D{
-		X: Unit(rotationMatrix[0][1]),
-		Y: Unit(rotationMatrix[1][1]),
-		Z: Unit(rotationMatrix[2][1]),
-	},
-	}
-}

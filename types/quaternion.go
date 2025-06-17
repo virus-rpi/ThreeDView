@@ -94,19 +94,6 @@ func (q Quaternion) RotatePoint(p Point3D) Point3D {
 	}
 }
 
-// ToRotationMatrix converts the quaternion to a 3x3 rotation matrix
-func (q Quaternion) ToRotationMatrix() RotationMatrix {
-	qx := q.X
-	qy := q.Y
-	qz := q.Z
-	qw := q.W
-	return RotationMatrix{
-		{1 - 2*qy*qy - 2*qz*qz, 2*qx*qy - 2*qz*qw, 2*qx*qz + 2*qy*qw},
-		{2*qx*qy + 2*qz*qw, 1 - 2*qx*qx - 2*qz*qz, 2*qy*qz - 2*qx*qw},
-		{2*qx*qz - 2*qy*qw, 2*qy*qz + 2*qx*qw, 1 - 2*qx*qx - 2*qy*qy},
-	}
-}
-
 // FromEuler creates a quaternion from Euler angles (in radians)
 func FromEuler(yaw, pitch, roll float64) Quaternion {
 	cy := math.Cos(yaw * 0.5)
@@ -121,24 +108,4 @@ func FromEuler(yaw, pitch, roll float64) Quaternion {
 		Y: cr*sp*cy + sr*cp*sy,
 		Z: cr*cp*sy - sr*sp*cy,
 	}
-}
-
-// ToEuler returns yaw, pitch, roll (in radians)
-func (q Quaternion) ToEuler() (yaw, pitch, roll float64) {
-	// yaw (Z), pitch (Y), roll (X)
-	sinr_cosp := 2 * (q.W*q.X + q.Y*q.Z)
-	cosr_cosp := 1 - 2*(q.X*q.X+q.Y*q.Y)
-	roll = math.Atan2(sinr_cosp, cosr_cosp)
-
-	sinp := 2 * (q.W*q.Y - q.Z*q.X)
-	if math.Abs(sinp) >= 1 {
-		pitch = math.Copysign(math.Pi/2, sinp)
-	} else {
-		pitch = math.Asin(sinp)
-	}
-
-	siny_cosp := 2 * (q.W*q.Z + q.X*q.Y)
-	cosy_cosp := 1 - 2*(q.Y*q.Y+q.Z*q.Z)
-	yaw = math.Atan2(siny_cosp, cosy_cosp)
-	return
 }
