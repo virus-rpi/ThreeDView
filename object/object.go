@@ -46,10 +46,12 @@ func (object *Object) GetFaces() []FaceData {
 	for i, face := range object.Faces {
 		go func(i int, face FaceData) {
 			defer wg.Done()
-			face.Face.Rotate(mgl.Vec3{}, object.Rotation)
-			face.Face.Add(object.Position)
-			face.Distance = face.Face.DistanceTo(object.Widget.GetCamera().Position)
-			faces[i] = face
+			clonedFace := face
+			clonedFace.Face = face.Face
+			clonedFace.Face.Rotate(mgl.Vec3{}, object.Rotation)
+			clonedFace.Face.Add(object.Position)
+			clonedFace.Distance = clonedFace.Face.DistanceTo(object.Widget.GetCamera().Position)
+			faces[i] = clonedFace
 		}(i, face)
 	}
 	wg.Wait()

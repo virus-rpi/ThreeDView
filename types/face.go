@@ -17,7 +17,7 @@ func (face *Face) Rotate(pivot mgl.Vec3, rotation mgl.Quat) {
 // Add adds another point to the face
 func (face *Face) Add(other mgl.Vec3) {
 	for i := 0; i < len(face); i++ {
-		face[i].Add(other)
+		face[i] = face[i].Add(other)
 	}
 }
 

@@ -99,7 +99,7 @@ func NewPlane(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color
 
 // NewOrientationObject creates an orientation object with arrows for X, Y, and Z axes
 func NewOrientationObject(w ThreeDWidgetInterface) *Object {
-	size := Unit(2)
+	size := Unit(5)
 	thickness := size / 20
 
 	faces := []FaceData{
@@ -160,7 +160,15 @@ func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 		Widget:   w,
 	}
 	w.RegisterTickMethod(func() {
-		orientationObject.Position = w.GetCamera().UnProject(Point2D{X: 60, Y: 90}, 20, w.GetWidth(), w.GetHeight())
+		desiredPixelSize := 40
+		screenHeight := w.GetHeight()
+		fov := w.GetCamera().Fov
+
+		fovRad := float64(fov) * math.Pi / 180.0
+		distance := (float64(size) / 2) / (math.Tan(fovRad/2) * (float64(desiredPixelSize) / float64(screenHeight)))
+
+		margin := desiredPixelSize * 2
+		orientationObject.Position = w.GetCamera().UnProject(Point2D{X: Pixel(margin), Y: Pixel(margin)}, Unit(distance), w.GetWidth(), w.GetHeight())
 	})
 	w.AddObject(&orientationObject)
 	return &orientationObject
