@@ -171,6 +171,15 @@ func (w *ThreeDWidget) render() image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, int(Width), int(Height)))
 	draw.Draw(img, img.Bounds(), &image.Uniform{C: w.bgColor}, image.Point{}, draw.Src)
 
+	// Z-buffer initialization
+	zBuffer := make([][]float64, int(Width))
+	for i := range zBuffer {
+		zBuffer[i] = make([]float64, int(Height))
+		for j := range zBuffer[i] {
+			zBuffer[i][j] = math.Inf(1) // Initialize to farthest possible
+		}
+	}
+
 	var faces []FaceData
 	var wg3d sync.WaitGroup
 	var mu3d sync.Mutex
@@ -197,20 +206,26 @@ func (w *ThreeDWidget) render() image.Image {
 	for _, face := range faces {
 		go func(face FaceData) {
 			defer wg2d.Done()
-			clippedPolys := w.camera.ClipAndProjectFace(face.Face, Width, Height)
+			clippedPolys := w.camera.ClipAndProjectFaceWithZ(face.Face, Width, Height)
 			if clippedPolys == nil {
 				return
 			}
 			for _, tri := range clippedPolys {
-				if len(tri) != 3 {
+				if len(tri.Points) != 3 {
 					continue
 				}
-				p1, p2, p3 := tri[0], tri[1], tri[2]
+				p1, p2, p3 := tri.Points[0], tri.Points[1], tri.Points[2]
+				z1, z2, z3 := tri.Z[0], tri.Z[1], tri.Z[2]
 				if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
 					continue
 				}
 				mu.Lock()
-				projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]mgl.Vec2{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
+				projectedFaces = append(projectedFaces, ProjectedFaceData{
+					Face:     [3]mgl.Vec2{p1, p2, p3},
+					Z:        [3]float64{z1, z2, z3},
+					Color:    face.Color,
+					Distance: face.Distance,
+				})
 				mu.Unlock()
 			}
 		}(face)
@@ -222,7 +237,7 @@ func (w *ThreeDWidget) render() image.Image {
 	})
 
 	for _, face := range projectedFaces {
-		drawFace(img, face, w.renderFaceOutlines, w.renderFaceColors)
+		drawFaceZ(img, face, zBuffer, w.renderFaceOutlines, w.renderFaceColors)
 	}
 
 	return img
@@ -391,4 +406,152 @@ func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
 	minY := min(int(p1.Y()), min(int(p2.Y()), int(p3.Y())))
 	maxY := max(int(p1.Y()), max(int(p2.Y()), int(p3.Y())))
 	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
+}
+
+func drawFaceZ(img *image.RGBA, face ProjectedFaceData, zBuffer [][]float64, renderFaceOutlines bool, renderFaceColors bool) {
+	if renderFaceColors {
+		drawFilledTriangleZ(img, face.Face, face.Z, face.Color, zBuffer)
+	}
+
+	if !renderFaceOutlines {
+		log.Println("drawFaceZ: skipping outlines")
+		return
+	}
+	var outlineColor color.Color
+	if !renderFaceColors {
+		outlineColor = face.Color
+	} else {
+		outlineColor = color.Black
+	}
+	// Pass z values for each edge
+	drawLineZ(img, face.Face[0], face.Z[0], face.Face[1], face.Z[1], outlineColor, zBuffer)
+	drawLineZ(img, face.Face[1], face.Z[1], face.Face[2], face.Z[2], outlineColor, zBuffer)
+	drawLineZ(img, face.Face[2], face.Z[2], face.Face[0], face.Z[0], outlineColor, zBuffer)
+}
+
+func drawLineZ(img *image.RGBA, point1 mgl.Vec2, z1 float64, point2 mgl.Vec2, z2 float64, lineColor color.Color, zBuffer [][]float64) {
+	x0 := int(math.Round(point1.X()))
+	y0 := int(math.Round(point1.Y()))
+	x1 := int(math.Round(point2.X()))
+	y1 := int(math.Round(point2.Y()))
+	if math.IsNaN(point1.X()) || math.IsNaN(point1.Y()) || math.IsNaN(point2.X()) || math.IsNaN(point2.Y()) ||
+		math.IsInf(point1.X(), 0) || math.IsInf(point1.Y(), 0) || math.IsInf(point2.X(), 0) || math.IsInf(point2.Y(), 0) {
+		log.Println("drawLineZ: NaN or Inf detected, skipping line")
+		return
+	}
+	dx := int(math.Abs(float64(x1 - x0)))
+	dy := int(math.Abs(float64(y1 - y0)))
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	sy := -1
+	if y0 < y1 {
+		sy = 1
+	}
+	err := dx - dy
+	maxIter := dx + dy + 10
+	iter := 0
+	for {
+		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
+			var t float64
+			totalDist := math.Hypot(float64(x1-x0), float64(y1-y0))
+			if totalDist != 0 {
+				t = math.Hypot(float64(x0-int(math.Round(point1.X()))), float64(y0-int(math.Round(point1.Y())))) / totalDist
+			} else {
+				t = 0
+			}
+			z := z1 + (z2-z1)*t
+			if z < zBuffer[x0][y0] {
+				zBuffer[x0][y0] = z
+				img.Set(x0, y0, lineColor)
+			}
+		}
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x0 += sx
+		}
+		if e2 < dx {
+			err += dx
+			y0 += sy
+		}
+		iter++
+		if iter > maxIter {
+			log.Println("drawLineZ: max iterations reached, breaking to avoid infinite loop")
+			break
+		}
+	}
+}
+
+func drawFilledTriangleZ(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor color.Color, zBuffer [][]float64) {
+	// Sort vertices by Y
+	v := [3]struct {
+		p mgl.Vec2
+		z float64
+	}{
+		{p[0], z[0]}, {p[1], z[1]}, {p[2], z[2]},
+	}
+	// Bubble sort for 3 elements
+	if v[1].p.Y() < v[0].p.Y() {
+		v[0], v[1] = v[1], v[0]
+	}
+	if v[2].p.Y() < v[0].p.Y() {
+		v[0], v[2] = v[2], v[0]
+	}
+	if v[2].p.Y() < v[1].p.Y() {
+		v[1], v[2] = v[2], v[1]
+	}
+
+	interpolate := func(y, y1, y2, x1, x2, z1, z2 float64) (Pixel, float64) {
+		if y1 == y2 {
+			return Pixel(x1), z1
+		}
+		t := (y - y1) / (y2 - y1)
+		return Pixel(x1 + (x2-x1)*t), z1 + (z2-z1)*t
+	}
+
+	for yf := math.Ceil(v[0].p.Y()); yf <= v[1].p.Y(); yf++ {
+		x1, z1 := interpolate(yf, v[0].p.Y(), v[1].p.Y(), v[0].p.X(), v[1].p.X(), v[0].z, v[1].z)
+		x2, z2 := interpolate(yf, v[0].p.Y(), v[2].p.Y(), v[0].p.X(), v[2].p.X(), v[0].z, v[2].z)
+		if x1 > x2 {
+			x1, x2, z1, z2 = x2, x1, z2, z1
+		}
+		for x := int(math.Ceil(float64(x1))); float64(x) <= float64(x2); x++ {
+			if x >= 0 && x < int(Width) && int(yf) >= 0 && int(yf) < int(Height) {
+				t := 0.0
+				if x2 != x1 {
+					t = float64(x-int(x1)) / float64(x2-x1)
+				}
+				z := z1 + (z2-z1)*t
+				if z < zBuffer[x][int(yf)] {
+					zBuffer[x][int(yf)] = z
+					img.Set(x, int(yf), fillColor)
+				}
+			}
+		}
+	}
+	for yf := v[1].p.Y(); yf <= v[2].p.Y(); yf++ {
+		x1, z1 := interpolate(yf, v[1].p.Y(), v[2].p.Y(), v[1].p.X(), v[2].p.X(), v[1].z, v[2].z)
+		x2, z2 := interpolate(yf, v[0].p.Y(), v[2].p.Y(), v[0].p.X(), v[2].p.X(), v[0].z, v[2].z)
+		if x1 > x2 {
+			x1, x2, z1, z2 = x2, x1, z2, z1
+		}
+		for x := int(math.Ceil(float64(x1))); float64(x) <= float64(x2); x++ {
+			if x >= 0 && x < int(Width) && int(yf) >= 0 && int(yf) < int(Height) {
+				t := 0.0
+				if x2 != x1 {
+					t = float64(x-int(x1)) / float64(x2-x1)
+				}
+				z := z1 + (z2-z1)*t
+				if z < zBuffer[x][int(yf)] {
+					zBuffer[x][int(yf)] = z
+					img.Set(x, int(yf), fillColor)
+				}
+			}
+		}
+	}
 }

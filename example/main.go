@@ -45,7 +45,7 @@ func main() {
 	cube := object.NewCube(100, mgl.Vec3{
 		0,
 		0,
-		50,
+		51,
 	},
 		mgl.QuatIdent(),
 		color.RGBA{

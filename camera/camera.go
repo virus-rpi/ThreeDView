@@ -98,7 +98,11 @@ func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
 }
 
 // ClipAndProjectFace clips a polygon (in world space) to the camera frustum and returns the resulting polygon(s) in screen space
-func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl.Vec2 {
+// Now also returns per-vertex z values for z-buffering
+func (camera *Camera) ClipAndProjectFaceWithZ(face Face, width, height Pixel) []struct {
+	Points [3]mgl.Vec2
+	Z      [3]float64
+} {
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
 	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
@@ -117,6 +121,7 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl
 	}
 
 	var out2d []mgl.Vec2
+	var outz []float64
 	for _, v := range clipped {
 		if v.W() == 0 {
 			continue
@@ -125,6 +130,7 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl
 		sx := (ndc.X() + 1) * 0.5 * float64(width)
 		sy := (1 - (ndc.Y()+1)*0.5) * float64(height)
 		out2d = append(out2d, mgl.Vec2{sx, sy})
+		outz = append(outz, ndc.Z()) // Store NDC z value
 	}
 	if len(out2d) < 3 {
 		return nil
@@ -135,14 +141,25 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl
 		flat = append(flat, v.X(), v.Y())
 	}
 	indices, _ := earcut.Earcut(flat, nil, 2)
-	var result [][]mgl.Vec2
+	var result []struct {
+		Points [3]mgl.Vec2
+		Z      [3]float64
+	}
 	for i := 0; i+2 < len(indices); i += 3 {
-		tri := []mgl.Vec2{
+		tri := [3]mgl.Vec2{
 			out2d[indices[i]],
 			out2d[indices[i+1]],
 			out2d[indices[i+2]],
 		}
-		result = append(result, tri)
+		ztri := [3]float64{
+			outz[indices[i]],
+			outz[indices[i+1]],
+			outz[indices[i+2]],
+		}
+		result = append(result, struct {
+			Points [3]mgl.Vec2
+			Z      [3]float64
+		}{tri, ztri})
 	}
 	return result
 }
