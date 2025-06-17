@@ -90,12 +90,13 @@ func (controller *OrbitController) OnScroll(_, y float32) {
 	if !controller.controlsEnabled {
 		return
 	}
-	controller.Move(Unit(-y * 5)) // Negative to zoom in on scroll up
+	controller.Move(Unit(-y * 5))
 }
 
 // Update recalculates the camera's position and orientation
 func (controller *OrbitController) Update() {
 	controller.updatePosition()
+	controller.updateRotation()
 }
 
 func (controller *OrbitController) updatePosition() {
@@ -103,66 +104,94 @@ func (controller *OrbitController) updatePosition() {
 		return
 	}
 	center := controller.target.GetPosition()
-	// Camera offset: start at (0, 0, distance) and rotate by current quaternion
 	pos := Point3D{X: 0, Y: 0, Z: controller.distance}
 	pos = controller.rotation.RotatePoint(pos)
 	pos.Add(center)
 	controller.camera.Position = pos
-
-	// Camera should look at the target: compute look rotation quaternion
-	lookDir := Point3D{X: center.X - pos.X, Y: center.Y - pos.Y, Z: center.Z - pos.Z}
-	up := Point3D{X: 0, Y: 1, Z: 0}
-	controller.camera.Rotation = LookRotationQuaternion(lookDir, up)
 }
 
-// LookRotationQuaternion returns a quaternion that rotates the forward vector (0,0,1) to lookDir, using up as the up direction
-func LookRotationQuaternion(lookDir, up Point3D) Quaternion {
-	mag := math.Sqrt(float64(lookDir.X*lookDir.X + lookDir.Y*lookDir.Y + lookDir.Z*lookDir.Z))
-	if mag == 0 {
-		return IdentityQuaternion()
+func (controller *OrbitController) updateRotation() {
+	if controller.camera == nil || controller.target == nil {
+		return
 	}
-	f := Point3D{X: lookDir.X / Unit(mag), Y: lookDir.Y / Unit(mag), Z: lookDir.Z / Unit(mag)}
-	upMag := math.Sqrt(float64(up.X*up.X + up.Y*up.Y + up.Z*up.Z))
-	if upMag == 0 {
+	// Always keep the target perfectly centered on the screen by looking at the target
+	center := controller.target.GetPosition()
+	cameraPos := controller.camera.Position
+	direction := Point3D{
+		X: center.X - cameraPos.X,
+		Y: center.Y - cameraPos.Y,
+		Z: center.Z - cameraPos.Z,
+	}
+	// Normalize direction
+	length := math.Sqrt(float64(direction.X*direction.X + direction.Y*direction.Y + direction.Z*direction.Z))
+	if length == 0 {
+		controller.camera.Rotation = IdentityQuaternion()
+		return
+	}
+	direction.X /= Unit(length)
+	direction.Y /= Unit(length)
+	direction.Z /= Unit(length)
+
+	// Default up vector
+	up := Point3D{X: 0, Y: 0, Z: 1}
+	// If direction is parallel to up, use a different up vector
+	if math.Abs(float64(direction.X*up.X+direction.Y*up.Y+direction.Z*up.Z)) > 0.999 {
 		up = Point3D{X: 0, Y: 1, Z: 0}
+	}
+
+	// Calculate right and true up
+	right := up.Cross(direction)
+	// Normalize right
+	rightLen := math.Sqrt(float64(right.X*right.X + right.Y*right.Y + right.Z*right.Z))
+	if rightLen == 0 {
+		right = Point3D{X: 1, Y: 0, Z: 0}
 	} else {
-		up = Point3D{X: up.X / Unit(upMag), Y: up.Y / Unit(upMag), Z: up.Z / Unit(upMag)}
+		right.X /= Unit(rightLen)
+		right.Y /= Unit(rightLen)
+		right.Z /= Unit(rightLen)
 	}
-	r := f.Cross(up)
-	u := r.Cross(f)
-	m := [3][3]float64{
-		{float64(r.X), float64(u.X), -float64(f.X)},
-		{float64(r.Y), float64(u.Y), -float64(f.Y)},
-		{float64(r.Z), float64(u.Z), -float64(f.Z)},
-	}
-	tr := m[0][0] + m[1][1] + m[2][2]
-	var q Quaternion
-	if tr > 0 {
-		s := math.Sqrt(tr+1.0) * 2
-		q.W = 0.25 * s
-		q.X = (m[2][1] - m[1][2]) / s
-		q.Y = (m[0][2] - m[2][0]) / s
-		q.Z = (m[1][0] - m[0][1]) / s
-	} else if m[0][0] > m[1][1] && m[0][0] > m[2][2] {
-		s := math.Sqrt(1.0+m[0][0]-m[1][1]-m[2][2]) * 2
-		q.W = (m[2][1] - m[1][2]) / s
-		q.X = 0.25 * s
-		q.Y = (m[0][1] + m[1][0]) / s
-		q.Z = (m[0][2] + m[2][0]) / s
-	} else if m[1][1] > m[2][2] {
-		s := math.Sqrt(1.0+m[1][1]-m[0][0]-m[2][2]) * 2
-		q.W = (m[0][2] - m[2][0]) / s
-		q.X = (m[0][1] + m[1][0]) / s
-		q.Y = 0.25 * s
-		q.Z = (m[1][2] + m[2][1]) / s
+	trueUp := direction.Cross(right)
+
+	// Build rotation matrix (columns: right, trueUp, direction)
+	m00 := float64(right.X)
+	m01 := float64(trueUp.X)
+	m02 := float64(direction.X)
+	m10 := float64(right.Y)
+	m11 := float64(trueUp.Y)
+	m12 := float64(direction.Y)
+	m20 := float64(right.Z)
+	m21 := float64(trueUp.Z)
+	m22 := float64(direction.Z)
+
+	// Convert rotation matrix to quaternion
+	trace := m00 + m11 + m22
+	var qw, qx, qy, qz float64
+	if trace > 0 {
+		s := math.Sqrt(trace+1.0) * 2
+		qw = 0.25 * s
+		qx = (m21 - m12) / s
+		qy = (m02 - m20) / s
+		qz = (m10 - m01) / s
+	} else if m00 > m11 && m00 > m22 {
+		s := math.Sqrt(1.0+m00-m11-m22) * 2
+		qw = (m21 - m12) / s
+		qx = 0.25 * s
+		qy = (m01 + m10) / s
+		qz = (m02 + m20) / s
+	} else if m11 > m22 {
+		s := math.Sqrt(1.0+m11-m00-m22) * 2
+		qw = (m02 - m20) / s
+		qx = (m01 + m10) / s
+		qy = 0.25 * s
+		qz = (m12 + m21) / s
 	} else {
-		s := math.Sqrt(1.0+m[2][2]-m[0][0]-m[1][1]) * 2
-		q.W = (m[1][0] - m[0][1]) / s
-		q.X = (m[0][2] + m[2][0]) / s
-		q.Y = (m[1][2] + m[2][1]) / s
-		q.Z = 0.25 * s
+		s := math.Sqrt(1.0+m22-m00-m11) * 2
+		qw = (m10 - m01) / s
+		qx = (m02 + m20) / s
+		qy = (m12 + m21) / s
+		qz = 0.25 * s
 	}
-	return q
+	controller.camera.Rotation = NewQuaternion(qw, qx, qy, qz)
 }
 
 // ManualController is a controller that allows the camera to be manually controlled. Useful for debugging

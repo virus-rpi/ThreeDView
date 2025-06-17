@@ -24,8 +24,9 @@ func main() {
 		B: 235,
 		A: 255,
 	})
-	threeDEnv.SetTPSCap(1600)
 	threeDEnv.SetResolutionFactor(1.0)
+	threeDEnv.SetRenderFaceOutlines(true)
+
 	object.NewPlane(5000, types.Point3D{
 		X: 0,
 		Y: 0,
@@ -39,7 +40,7 @@ func main() {
 			A: 255,
 		},
 		threeDEnv,
-		5)
+		1)
 
 	cube := object.NewCube(100, types.Point3D{
 		X: 0,

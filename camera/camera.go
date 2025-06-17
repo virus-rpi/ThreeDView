@@ -65,29 +65,54 @@ func (camera *Camera) UnProject(point2d Point2D, distance Unit, width, height Pi
 	return pointInWorldSpace
 }
 
-// IsInFrustum checks if a point is in the camera's frustum
-func (camera *Camera) IsInFrustum(point Point3D) bool {
-	translatedPoint := point
-	translatedPoint.Subtract(camera.Position)
-	translatedPoint = camera.Rotation.RotatePoint(translatedPoint)
+func (camera *Camera) FaceOverlapsFrustum(face Face) bool {
+	points := [3]Point3D{}
+	for i := 0; i < 3; i++ {
+		p := face[i]
+		p.Subtract(camera.Position)
+		p = camera.Rotation.RotatePoint(p)
+		points[i] = p
+	}
+
+	minX, maxX := points[0].X, points[0].X
+	minY, maxY := points[0].Y, points[0].Y
+	minZ, maxZ := points[0].Z, points[0].Z
+	for i := 1; i < 3; i++ {
+		if points[i].X < minX {
+			minX = points[i].X
+		}
+		if points[i].X > maxX {
+			maxX = points[i].X
+		}
+		if points[i].Y < minY {
+			minY = points[i].Y
+		}
+		if points[i].Y > maxY {
+			maxY = points[i].Y
+		}
+		if points[i].Z < minZ {
+			minZ = points[i].Z
+		}
+		if points[i].Z > maxZ {
+			maxZ = points[i].Z
+		}
+	}
 
 	fovRadians := camera.Fov.ToRadians()
 	aspectRatio := 1.0
 	tanFovOver2 := math.Tan(float64(fovRadians) / 2)
+	near := Unit(0.1)
 
-	if translatedPoint.Z < Unit(0.1) {
+	if maxZ < near {
 		return false
 	}
-
-	rightPlaneX := translatedPoint.Z * Unit(tanFovOver2*aspectRatio)
-	if translatedPoint.X < -rightPlaneX || translatedPoint.X > rightPlaneX {
+	rightPlaneX := maxZ * Unit(tanFovOver2*aspectRatio)
+	if minX > rightPlaneX || maxX < -rightPlaneX {
 		return false
 	}
-
-	topPlaneY := translatedPoint.Z * Unit(tanFovOver2)
-	if translatedPoint.Y < -topPlaneY || translatedPoint.Y > topPlaneY {
+	topPlaneY := maxZ * Unit(tanFovOver2)
+	if minY > topPlaneY || maxY < -topPlaneY {
 		return false
 	}
-
 	return true
 }

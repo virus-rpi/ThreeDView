@@ -180,7 +180,7 @@ func (w *ThreeDWidget) render() image.Image {
 			objectFaces := object.GetFaces()
 			mu3d.Lock()
 			for _, face := range objectFaces {
-				if w.camera.IsInFrustum(face.Face[0]) || w.camera.IsInFrustum(face.Face[1]) || w.camera.IsInFrustum(face.Face[2]) {
+				if w.camera.FaceOverlapsFrustum(face.Face) {
 					faces = append(faces, face)
 				}
 			}
@@ -200,7 +200,7 @@ func (w *ThreeDWidget) render() image.Image {
 			p2 := w.camera.Project(face.Face[1], Width, Height)
 			p3 := w.camera.Project(face.Face[2], Width, Height)
 
-			if !p1.InBounds(0, 0, Width, Height) && !p2.InBounds(0, 0, Width, Height) && !p3.InBounds(0, 0, Width, Height) {
+			if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
 				return
 			}
 
@@ -366,4 +366,12 @@ func drawFilledTriangle(img *image.RGBA, p1, p2, p3 Point2D, fillColor color.Col
 		x2 := interpolateX(y, p1.Y, p3.Y, p1.X, p3.X)
 		drawHorizontalLine(y, x1, x2, fillColor)
 	}
+}
+
+func triangleOverlapsScreen(p1, p2, p3 Point2D, width, height Pixel) bool {
+	minX := min(int(p1.X), min(int(p2.X), int(p3.X)))
+	maxX := max(int(p1.X), max(int(p2.X), int(p3.X)))
+	minY := min(int(p1.Y), min(int(p2.Y), int(p3.Y)))
+	maxY := max(int(p1.Y), max(int(p2.Y), int(p3.Y)))
+	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
 }

@@ -156,7 +156,7 @@ func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 		Widget:   w,
 	}
 	w.RegisterTickMethod(func() {
-		orientationObject.Position = w.GetCamera().UnProject(Point2D{X: 60, Y: 70}, 20, w.GetWidth(), w.GetHeight())
+		orientationObject.Position = w.GetCamera().UnProject(Point2D{X: 60, Y: 90}, 20, w.GetWidth(), w.GetHeight())
 	})
 	w.AddObject(&orientationObject)
 	return &orientationObject
