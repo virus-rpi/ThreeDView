@@ -197,17 +197,26 @@ func (w *ThreeDWidget) render() image.Image {
 	for _, face := range faces {
 		go func(face FaceData) {
 			defer wg2d.Done()
-			p1 := w.camera.Project(face.Face[0], Width, Height)
-			p2 := w.camera.Project(face.Face[1], Width, Height)
-			p3 := w.camera.Project(face.Face[2], Width, Height)
-
-			if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
+			clippedPolys := w.camera.ClipAndProjectFace(face.Face, Width, Height)
+			if clippedPolys == nil {
 				return
 			}
-
-			mu.Lock()
-			projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]mgl.Vec2{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
-			mu.Unlock()
+			for _, poly := range clippedPolys {
+				if len(poly) < 3 {
+					continue
+				}
+				for i := 1; i+1 < len(poly); i++ {
+					p1 := poly[0]
+					p2 := poly[i]
+					p3 := poly[i+1]
+					if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
+						continue
+					}
+					mu.Lock()
+					projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]mgl.Vec2{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
+					mu.Unlock()
+				}
+			}
 		}(face)
 	}
 	wg2d.Wait()

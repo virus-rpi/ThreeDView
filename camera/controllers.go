@@ -97,7 +97,7 @@ func (controller *OrbitController) OnScroll(_, y float32) {
 // Update recalculates the camera's position and orientation
 func (controller *OrbitController) Update() {
 	controller.updatePosition()
-	// controller.lookAtTarget()
+	controller.lookAtTarget()
 }
 
 func (controller *OrbitController) updatePosition() {
@@ -117,13 +117,15 @@ func (controller *OrbitController) lookAtTarget() {
 	}
 	center := controller.target.GetPosition()
 	cameraPos := controller.camera.Position
+	direction := center.Sub(cameraPos).Normalize()
 	up := mgl.Vec3{0, 0, 1}
-	controller.camera.Rotation = mgl.QuatLookAtV(cameraPos, center, up)
+	controller.camera.Rotation = mgl.QuatLookAtV(mgl.Vec3{0, 0, 0}, direction, up)
 }
 
 // ManualController is a controller that allows the camera to be manually controlled. Useful for debugging
 type ManualController struct {
 	BaseController
+	angles [3]float64 // yaw, pitch, roll in degrees
 }
 
 // NewManualController creates a new ManualController
@@ -135,18 +137,18 @@ func NewManualController() *ManualController {
 func (controller *ManualController) GetRotationSlider() *fyne.Container {
 	sliderYaw := widget.NewSlider(0, 360)
 	sliderYaw.OnChanged = func(value float64) {
-		q := mgl.QuatRotate(value*math.Pi/180, mgl.Vec3{0, 1, 0})
-		controller.camera.Rotation = q.Mul(controller.camera.Rotation)
+		controller.angles[0] = value
+		controller.RefreshCameraRotation()
 	}
 	sliderPitch := widget.NewSlider(0, 360)
 	sliderPitch.OnChanged = func(value float64) {
-		q := mgl.QuatRotate(value*math.Pi/180, mgl.Vec3{1, 0, 0})
-		controller.camera.Rotation = q.Mul(controller.camera.Rotation)
+		controller.angles[1] = value
+		controller.RefreshCameraRotation()
 	}
 	sliderRoll := widget.NewSlider(0, 360)
 	sliderRoll.OnChanged = func(value float64) {
-		q := mgl.QuatRotate(value*math.Pi/180, mgl.Vec3{0, 0, 1})
-		controller.camera.Rotation = q.Mul(controller.camera.Rotation)
+		controller.angles[2] = value
+		controller.RefreshCameraRotation()
 	}
 	sliderContainer := container.NewVBox(sliderYaw, sliderPitch, sliderRoll)
 	return sliderContainer
@@ -206,11 +208,26 @@ func (controller *ManualController) GetInfoLabel() *widget.Label {
 		defer ticker.Stop()
 		for range ticker.C {
 			q := controller.camera.Rotation
-			label.SetText(fmt.Sprintf("X: %.2f Y: %.2f Z: %.2f      Q: (%.2f, %.2f, %.2f, %.2f)",
-				controller.camera.Position.X(), controller.camera.Position.Y(), controller.camera.Position.Z(),
-				q.W, q.X(), q.Y(), q.Z()))
-			label.Refresh()
+			fyne.Do(func() {
+				label.SetText(fmt.Sprintf("X: %.2f Y: %.2f Z: %.2f      Q: (%.2f, %.2f, %.2f, %.2f)",
+					controller.camera.Position.X(), controller.camera.Position.Y(), controller.camera.Position.Z(),
+					q.W, q.X(), q.Y(), q.Z()))
+				label.Refresh()
+			})
 		}
 	}()
 	return label
+}
+
+func (controller *ManualController) RefreshCameraRotation() {
+	if controller.camera == nil {
+		return
+	}
+	yaw := controller.angles[0] * math.Pi / 180
+	pitch := controller.angles[1] * math.Pi / 180
+	roll := controller.angles[2] * math.Pi / 180
+	qYaw := mgl.QuatRotate(yaw, mgl.Vec3{0, 1, 0})
+	qPitch := mgl.QuatRotate(pitch, mgl.Vec3{1, 0, 0})
+	qRoll := mgl.QuatRotate(roll, mgl.Vec3{0, 0, 1})
+	controller.camera.Rotation = qYaw.Mul(qPitch).Mul(qRoll)
 }

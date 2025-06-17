@@ -96,6 +96,77 @@ func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
 	return false
 }
 
+// ClipAndProjectFace clips a polygon (in world space) to the camera frustum and returns the resulting polygon(s) in screen space
+func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl.Vec2 {
+	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
+	aspect := float64(width) / float64(height)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+	mvp := proj.Mul4(view)
+
+	vertices := make([]mgl.Vec4, 3)
+	for i := 0; i < 3; i++ {
+		v := face[i]
+		v4 := mgl.Vec4{v.X(), v.Y(), v.Z(), 1}
+		vertices[i] = mvp.Mul4x1(v4)
+	}
+
+	clipped := clipPolygonHomogeneous(vertices)
+	if len(clipped) < 3 {
+		return nil
+	}
+
+	var out []mgl.Vec2
+	for _, v := range clipped {
+		if v.W() == 0 {
+			continue
+		}
+		ndc := v.Mul(1.0 / v.W())
+		sx := (ndc.X() + 1) * 0.5 * float64(width)
+		sy := (1 - (ndc.Y()+1)*0.5) * float64(height)
+		out = append(out, mgl.Vec2{sx, sy})
+	}
+	if len(out) < 3 {
+		return nil
+	}
+	return [][]mgl.Vec2{out}
+}
+
+// clipPolygonHomogeneous clips a convex polygon in homogeneous clip space against the canonical view frustum
+func clipPolygonHomogeneous(vertices []mgl.Vec4) []mgl.Vec4 {
+	planes := [][4]float64{
+		{1, 0, 0, 1},  // x <= w
+		{-1, 0, 0, 1}, // -x <= w
+		{0, 1, 0, 1},  // y <= w
+		{0, -1, 0, 1}, // -y <= w
+		{0, 0, 1, 1},  // z <= w
+		{0, 0, -1, 1}, // -z <= w
+	}
+	out := vertices
+	for _, p := range planes {
+		var clipped []mgl.Vec4
+		for i := 0; i < len(out); i++ {
+			j := (i + 1) % len(out)
+			a := out[i]
+			b := out[j]
+			ad := p[0]*a.X() + p[1]*a.Y() + p[2]*a.Z() + p[3]*a.W()
+			bd := p[0]*b.X() + p[1]*b.Y() + p[2]*b.Z() + p[3]*b.W()
+			if ad >= 0 {
+				clipped = append(clipped, a)
+			}
+			if (ad >= 0) != (bd >= 0) {
+				t := ad / (ad - bd)
+				iv := a.Add(b.Sub(a).Mul(t))
+				clipped = append(clipped, iv)
+			}
+		}
+		out = clipped
+		if len(out) == 0 {
+			return nil
+		}
+	}
+	return out
+}
+
 func linesIntersect(p1, p2, q1, q2 mgl.Vec2) bool {
 	ccw := func(a, b, c mgl.Vec2) bool {
 		return (c.Y()-a.Y())*(b.X()-a.X()) > (b.Y()-a.Y())*(c.X()-a.X())
