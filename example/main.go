@@ -25,7 +25,7 @@ func main() {
 		A: 255,
 	})
 	threeDEnv.SetResolutionFactor(1.0)
-	threeDEnv.SetRenderSilhouettes(true)
+	threeDEnv.SetRenderObjectOutlines(true)
 
 	object.NewPlane(5000, mgl.Vec3{
 		0,

@@ -27,16 +27,17 @@ var (
 // ThreeDWidget is a widget that displays 3D objects
 type ThreeDWidget struct {
 	widget.BaseWidget
-	image              *canvas.Image // The image that is rendered on
-	camera             *Camera       // The camera of the 3D widget
-	objects            []*Object     // The objects in the 3D widget
-	tickMethods        []func()      // The methods that are called every frame
-	bgColor            color.Color   // The background color of the 3D widget
-	renderFaceOutlines bool          // Whether the faces should be rendered with outlines
-	renderFaceColors   bool          // Whether the faces should be rendered with colors
-	fpsCap             float64       // The maximum frames per second the widget should render at
-	tpsCap             float64       // The maximum ticks per second the widget should tick at
-	renderSilhouettes  bool          // Whether there should be a thick silhouette around the objects
+	image                *canvas.Image // The image that is rendered on
+	camera               *Camera       // The camera of the 3D widget
+	objects              []*Object     // The objects in the 3D widget
+	tickMethods          []func()      // The methods that are called every frame
+	bgColor              color.Color   // The background color of the 3D widget
+	renderFaceOutlines   bool          // Whether the faces should be rendered with outlines
+	renderFaceColors     bool          // Whether the faces should be rendered with colors
+	fpsCap               float64       // The maximum frames per second the widget should render at
+	tpsCap               float64       // The maximum ticks per second the widget should tick at
+	renderSilhouettes    bool          // Whether there should be a thick silhouette around the objects
+	renderObjectOutlines bool          // Whether to render outlines for each object separately
 }
 
 // NewThreeDWidget creates a new 3D widget
@@ -169,6 +170,11 @@ func (w *ThreeDWidget) SetRenderSilhouettes(newVal bool) {
 	w.renderSilhouettes = newVal
 }
 
+// SetRenderObjectOutlines sets whether to render outlines for each object separately.
+func (w *ThreeDWidget) SetRenderObjectOutlines(newVal bool) {
+	w.renderObjectOutlines = newVal
+}
+
 func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 	return &threeDRenderer{image: w.image}
 }
@@ -265,6 +271,25 @@ func (w *ThreeDWidget) render() image.Image {
 				outlineColor = color.Black
 			}
 			drawOutlineWithZTest(img, face, zBuffer, outlineColor)
+		}
+	}
+
+	if w.renderObjectOutlines {
+		camPos := w.camera.Position
+		for _, object := range w.objects {
+			edges := object.GetSilhouetteEdges(camPos)
+			for _, edge := range edges {
+				p1 := w.camera.Project(edge[0], Width, Height)
+				p2 := w.camera.Project(edge[1], Width, Height)
+				z1 := w.camera.ProjectZ(edge[0])
+				z2 := w.camera.ProjectZ(edge[1])
+				x0, y0, x1, y1, ok := cohenSutherlandClip(p1[0], p1[1], p2[0], p2[1], Width, Height)
+				if ok {
+					p1c := mgl.Vec2{x0, y0}
+					p2c := mgl.Vec2{x1, y1}
+					drawEdgeWithZTest(img, p1c, z1, p2c, z2, color.Black, zBuffer)
+				}
+			}
 		}
 	}
 
@@ -447,6 +472,74 @@ func drawFilledTriangleZ(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor
 			}
 		}
 	}
+}
+
+// Cohen–Sutherland outcodes
+const (
+	INSIDE = 0 // 0000
+	LEFT   = 1 // 0001
+	RIGHT  = 2 // 0010
+	BOTTOM = 4 // 0100
+	TOP    = 8 // 1000
+)
+
+func computeOutCode(x, y float64, width, height Pixel) int {
+	code := INSIDE
+	if x < 0 {
+		code |= LEFT
+	} else if x >= float64(width) {
+		code |= RIGHT
+	}
+	if y < 0 {
+		code |= TOP
+	} else if y >= float64(height) {
+		code |= BOTTOM
+	}
+	return code
+}
+
+// Clips a line to the screen rectangle. Returns true if a visible segment exists, and sets (x0, y0)-(x1, y1) to the clipped segment.
+func cohenSutherlandClip(x0, y0, x1, y1 float64, width, height Pixel) (float64, float64, float64, float64, bool) {
+	outcode0 := computeOutCode(x0, y0, width, height)
+	outcode1 := computeOutCode(x1, y1, width, height)
+	accept := false
+	for {
+		if outcode0|outcode1 == 0 {
+			accept = true
+			break
+		} else if outcode0&outcode1 != 0 {
+			break
+		} else {
+			var outcodeOut int
+			var x, y float64
+			if outcode0 != 0 {
+				outcodeOut = outcode0
+			} else {
+				outcodeOut = outcode1
+			}
+			if outcodeOut&TOP != 0 {
+				x = x0 + (x1-x0)*(0-y0)/(y1-y0)
+				y = 0
+			} else if outcodeOut&BOTTOM != 0 {
+				x = x0 + (x1-x0)*(float64(height-1)-y0)/(y1-y0)
+				y = float64(height - 1)
+			} else if outcodeOut&RIGHT != 0 {
+				y = y0 + (y1-y0)*(float64(width-1)-x0)/(x1-x0)
+				x = float64(width - 1)
+			} else if outcodeOut&LEFT != 0 {
+				y = y0 + (y1-y0)*(0-x0)/(x1-x0)
+				x = 0
+			}
+			if outcodeOut == outcode0 {
+				x0, y0 = x, y
+				outcode0 = computeOutCode(x0, y0, width, height)
+			} else {
+				x1, y1 = x, y
+				outcode1 = computeOutCode(x1, y1, width, height)
+			}
+		}
+	}
+	return x0, y0, x1, y1, accept
 }
 
 func thickLine(img *image.RGBA, x0, y0, x1, y1 int, col color.Color, thickness int) {

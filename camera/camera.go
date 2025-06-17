@@ -164,6 +164,13 @@ func (camera *Camera) ClipAndProjectFaceWithZ(face Face, width, height Pixel) []
 	return result
 }
 
+// ProjectZ returns the camera-space Z value (depth) of a 3D point
+func (camera *Camera) ProjectZ(point mgl.Vec3) float64 {
+	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
+	p := view.Mul4x1(point.Vec4(1))
+	return p.Z()
+}
+
 // clipPolygonHomogeneous clips a convex polygon in homogeneous clip space against the canonical view frustum
 func clipPolygonHomogeneous(vertices []mgl.Vec4) []mgl.Vec4 {
 	planes := [][4]float64{
