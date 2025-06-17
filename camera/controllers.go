@@ -96,7 +96,7 @@ func (controller *OrbitController) OnScroll(_, y float32) {
 // Update recalculates the camera's position and orientation
 func (controller *OrbitController) Update() {
 	controller.updatePosition()
-	controller.updateRotation()
+	controller.lookAtTarget()
 }
 
 func (controller *OrbitController) updatePosition() {
@@ -110,88 +110,70 @@ func (controller *OrbitController) updatePosition() {
 	controller.camera.Position = pos
 }
 
-func (controller *OrbitController) updateRotation() {
+func (controller *OrbitController) lookAtTarget() {
 	if controller.camera == nil || controller.target == nil {
 		return
 	}
-	// Always keep the target perfectly centered on the screen by looking at the target
 	center := controller.target.GetPosition()
 	cameraPos := controller.camera.Position
-	direction := Point3D{
+	dir := Point3D{
 		X: center.X - cameraPos.X,
 		Y: center.Y - cameraPos.Y,
 		Z: center.Z - cameraPos.Z,
 	}
-	// Normalize direction
-	length := math.Sqrt(float64(direction.X*direction.X + direction.Y*direction.Y + direction.Z*direction.Z))
+	length := math.Sqrt(float64(dir.X*dir.X + dir.Y*dir.Y + dir.Z*dir.Z))
 	if length == 0 {
 		controller.camera.Rotation = IdentityQuaternion()
 		return
 	}
-	direction.X /= Unit(length)
-	direction.Y /= Unit(length)
-	direction.Z /= Unit(length)
+	dir.X /= Unit(length)
+	dir.Y /= Unit(length)
+	dir.Z /= Unit(length)
 
-	// Default up vector
-	up := Point3D{X: 0, Y: 0, Z: 1}
-	// If direction is parallel to up, use a different up vector
-	if math.Abs(float64(direction.X*up.X+direction.Y*up.Y+direction.Z*up.Z)) > 0.999 {
-		up = Point3D{X: 0, Y: 1, Z: 0}
+	up := Point3D{X: 0, Y: 1, Z: 0}
+	if math.Abs(float64(dir.X*up.X+dir.Y*up.Y+dir.Z*up.Z)) > 0.999 {
+		up = Point3D{X: 0, Y: 0, Z: 1}
 	}
-
-	// Calculate right and true up
-	right := up.Cross(direction)
-	// Normalize right
-	rightLen := math.Sqrt(float64(right.X*right.X + right.Y*right.Y + right.Z*right.Z))
-	if rightLen == 0 {
-		right = Point3D{X: 1, Y: 0, Z: 0}
-	} else {
-		right.X /= Unit(rightLen)
-		right.Y /= Unit(rightLen)
-		right.Z /= Unit(rightLen)
-	}
-	trueUp := direction.Cross(right)
-
-	// Build rotation matrix (columns: right, trueUp, direction)
-	m00 := float64(right.X)
-	m01 := float64(trueUp.X)
-	m02 := float64(direction.X)
-	m10 := float64(right.Y)
-	m11 := float64(trueUp.Y)
-	m12 := float64(direction.Y)
-	m20 := float64(right.Z)
-	m21 := float64(trueUp.Z)
-	m22 := float64(direction.Z)
-
-	// Convert rotation matrix to quaternion
-	trace := m00 + m11 + m22
-	var qw, qx, qy, qz float64
-	if trace > 0 {
-		s := math.Sqrt(trace+1.0) * 2
-		qw = 0.25 * s
-		qx = (m21 - m12) / s
-		qy = (m02 - m20) / s
-		qz = (m10 - m01) / s
+	side := up.Cross(dir)
+	upn := dir.Cross(side)
+	m00 := float64(side.X)
+	m01 := float64(upn.X)
+	m02 := -float64(dir.X)
+	m10 := float64(side.Y)
+	m11 := float64(upn.Y)
+	m12 := -float64(dir.Y)
+	m20 := float64(side.Z)
+	m21 := float64(upn.Z)
+	m22 := -float64(dir.Z)
+	tr := m00 + m11 + m22
+	var q Quaternion
+	if tr > 0 {
+		s := math.Sqrt(tr+1.0) * 2
+		q.W = 0.25 * s
+		q.X = (m21 - m12) / s
+		q.Y = (m02 - m20) / s
+		q.Z = (m10 - m01) / s
 	} else if m00 > m11 && m00 > m22 {
 		s := math.Sqrt(1.0+m00-m11-m22) * 2
-		qw = (m21 - m12) / s
-		qx = 0.25 * s
-		qy = (m01 + m10) / s
-		qz = (m02 + m20) / s
+		q.W = (m21 - m12) / s
+		q.X = 0.25 * s
+		q.Y = (m01 + m10) / s
+		q.Z = (m02 + m20) / s
 	} else if m11 > m22 {
 		s := math.Sqrt(1.0+m11-m00-m22) * 2
-		qw = (m02 - m20) / s
-		qx = (m01 + m10) / s
-		qy = 0.25 * s
-		qz = (m12 + m21) / s
+		q.W = (m02 - m20) / s
+		q.X = (m01 + m10) / s
+		q.Y = 0.25 * s
+		q.Z = (m12 + m21) / s
 	} else {
 		s := math.Sqrt(1.0+m22-m00-m11) * 2
-		qw = (m10 - m01) / s
-		qx = (m02 + m20) / s
-		qy = (m12 + m21) / s
-		qz = 0.25 * s
+		q.W = (m10 - m01) / s
+		q.X = (m02 + m20) / s
+		q.Y = (m12 + m21) / s
+		q.Z = 0.25 * s
 	}
-	controller.camera.Rotation = NewQuaternion(qw, qx, qy, qz)
+	q.Normalize()
+	controller.camera.Rotation = q
 }
 
 // ManualController is a controller that allows the camera to be manually controlled. Useful for debugging
