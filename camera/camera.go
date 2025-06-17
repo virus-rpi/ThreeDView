@@ -25,18 +25,18 @@ func (camera *Camera) SetController(controller Controller) {
 }
 
 // Project projects a 3D point to a 2D point on the screen using mgl
-func (camera *Camera) Project(point mgl.Vec3, width, height Pixel) Point2D {
+func (camera *Camera) Project(point mgl.Vec3, width, height Pixel) mgl.Vec2 {
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
 	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
 	win := mgl.Project(point, view, proj, 0, 0, int(width), int(height))
-	return Point2D{X: Pixel(win.X()), Y: Pixel(float64(height) - win.Y())}
+	return mgl.Vec2{win.X(), float64(height) - win.Y()}
 }
 
 // UnProject returns a point at a given distance from the camera along the ray through the screen point
-func (camera *Camera) UnProject(point2d Point2D, distance Unit, width, height Pixel) mgl.Vec3 {
-	winNear := mgl.Vec3{float64(point2d.X), float64(height) - float64(point2d.Y), 0.0}
-	winFar := mgl.Vec3{float64(point2d.X), float64(height) - float64(point2d.Y), 1.0}
+func (camera *Camera) UnProject(point2d mgl.Vec2, distance Unit, width, height Pixel) mgl.Vec3 {
+	winNear := mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 0.0}
+	winFar := mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 1.0}
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
 	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)

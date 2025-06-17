@@ -25,7 +25,7 @@ type FaceData struct {
 
 // ProjectedFaceData represents a face projected to 2D space
 type ProjectedFaceData struct {
-	Face     [3]Point2D  // The Face in 2D space as 3 2d points
+	Face     [3]mgl.Vec2 // The Face in 2D space as 3 2d points
 	Color    color.Color // The Color of the Face
 	Distance Unit        // The Distance of the un-projected Face from the camera in 3d world space
 }

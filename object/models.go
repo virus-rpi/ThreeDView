@@ -168,7 +168,7 @@ func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 		distance := (float64(size) / 2) / (math.Tan(fovRad/2) * (float64(desiredPixelSize) / float64(screenHeight)))
 
 		margin := desiredPixelSize * 2
-		orientationObject.Position = w.GetCamera().UnProject(Point2D{X: Pixel(margin), Y: Pixel(margin)}, Unit(distance), w.GetWidth(), w.GetHeight())
+		orientationObject.Position = w.GetCamera().UnProject(mgl.Vec2{float64(margin), float64(margin)}, Unit(distance), w.GetWidth(), w.GetHeight())
 	})
 	w.AddObject(&orientationObject)
 	return &orientationObject

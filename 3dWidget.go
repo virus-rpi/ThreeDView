@@ -206,7 +206,7 @@ func (w *ThreeDWidget) render() image.Image {
 			}
 
 			mu.Lock()
-			projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]Point2D{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
+			projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]mgl.Vec2{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
 			mu.Unlock()
 		}(face)
 	}
@@ -275,6 +275,7 @@ func drawFace(img *image.RGBA, face ProjectedFaceData, renderFaceOutlines bool, 
 	}
 
 	if !renderFaceOutlines {
+		log.Println("drawFace: skipping outlines")
 		return
 	}
 	var outlineColor color.Color
@@ -291,26 +292,32 @@ func drawFace(img *image.RGBA, face ProjectedFaceData, renderFaceOutlines bool, 
 	drawLine(img, point3, point1, outlineColor)
 }
 
-func drawLine(img *image.RGBA, point1, point2 Point2D, lineColor color.Color) {
-	x0 := point1.X
-	y0 := point1.Y
-	x1 := point2.X
-	y1 := point2.Y
-	dx := math.Abs(float64(x1 - x0))
-	dy := math.Abs(float64(y1 - y0))
-	sx := Pixel(-1)
-	if x0 < x1 {
-		sx = Pixel(1)
+func drawLine(img *image.RGBA, point1, point2 mgl.Vec2, lineColor color.Color) {
+	x0 := int(math.Round(point1.X()))
+	y0 := int(math.Round(point1.Y()))
+	x1 := int(math.Round(point2.X()))
+	y1 := int(math.Round(point2.Y()))
+	if math.IsNaN(point1.X()) || math.IsNaN(point1.Y()) || math.IsNaN(point2.X()) || math.IsNaN(point2.Y()) ||
+		math.IsInf(point1.X(), 0) || math.IsInf(point1.Y(), 0) || math.IsInf(point2.X(), 0) || math.IsInf(point2.Y(), 0) {
+		log.Println("drawLine: NaN or Inf detected, skipping line")
+		return
 	}
-	sy := Pixel(-1)
+	dx := int(math.Abs(float64(x1 - x0)))
+	dy := int(math.Abs(float64(y1 - y0)))
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	sy := -1
 	if y0 < y1 {
-		sy = Pixel(1)
+		sy = 1
 	}
 	err := dx - dy
-
+	maxIter := dx + dy + 10
+	iter := 0
 	for {
-		if x0 >= 0 && x0 < Width && y0 >= 0 && y0 < Height {
-			img.Set(int(x0), int(y0), lineColor)
+		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
+			img.Set(x0, y0, lineColor)
 		}
 		if x0 == x1 && y0 == y1 {
 			break
@@ -324,20 +331,24 @@ func drawLine(img *image.RGBA, point1, point2 Point2D, lineColor color.Color) {
 			err += dx
 			y0 += sy
 		}
+		iter++
+		if iter > maxIter {
+			log.Println("drawLine: max iterations reached, breaking to avoid infinite loop")
+			break
+		}
 	}
 }
 
-func drawFilledTriangle(img *image.RGBA, p1, p2, p3 Point2D, fillColor color.Color) {
-	if p2.Y < p1.Y {
+func drawFilledTriangle(img *image.RGBA, p1, p2, p3 mgl.Vec2, fillColor color.Color) {
+	if p2.Y() < p1.Y() {
 		p1, p2 = p2, p1
 	}
-	if p3.Y < p1.Y {
+	if p3.Y() < p1.Y() {
 		p1, p3 = p3, p1
 	}
-	if p3.Y < p2.Y {
+	if p3.Y() < p2.Y() {
 		p2, p3 = p3, p2
 	}
-
 	drawHorizontalLine := func(y, x1, x2 Pixel, color color.Color) {
 		if x1 > x2 {
 			x1, x2 = x2, x1
@@ -349,30 +360,30 @@ func drawFilledTriangle(img *image.RGBA, p1, p2, p3 Point2D, fillColor color.Col
 		}
 	}
 
-	interpolateX := func(y, y1, y2, x1, x2 Pixel) Pixel {
+	interpolateX := func(y, y1, y2, x1, x2 float64) Pixel {
 		if y1 == y2 {
-			return x1
+			return Pixel(x1)
 		}
-		return x1 + (x2-x1)*(y-y1)/(y2-y1)
+		return Pixel(x1 + (x2-x1)*(y-y1)/(y2-y1))
 	}
 
-	for y := p1.Y; y <= p2.Y; y++ {
-		x1 := interpolateX(y, p1.Y, p2.Y, p1.X, p2.X)
-		x2 := interpolateX(y, p1.Y, p3.Y, p1.X, p3.X)
-		drawHorizontalLine(y, x1, x2, fillColor)
+	for yf := p1.Y(); yf <= p2.Y(); yf++ {
+		x1 := interpolateX(yf, p1.Y(), p2.Y(), p1.X(), p2.X())
+		x2 := interpolateX(yf, p1.Y(), p3.Y(), p1.X(), p3.X())
+		drawHorizontalLine(Pixel(yf), x1, x2, fillColor)
 	}
 
-	for y := p2.Y; y <= p3.Y; y++ {
-		x1 := interpolateX(y, p2.Y, p3.Y, p2.X, p3.X)
-		x2 := interpolateX(y, p1.Y, p3.Y, p1.X, p3.X)
-		drawHorizontalLine(y, x1, x2, fillColor)
+	for yf := p2.Y(); yf <= p3.Y(); yf++ {
+		x1 := interpolateX(yf, p2.Y(), p3.Y(), p2.X(), p3.X())
+		x2 := interpolateX(yf, p1.Y(), p3.Y(), p1.X(), p3.X())
+		drawHorizontalLine(Pixel(yf), x1, x2, fillColor)
 	}
 }
 
-func triangleOverlapsScreen(p1, p2, p3 Point2D, width, height Pixel) bool {
-	minX := min(int(p1.X), min(int(p2.X), int(p3.X)))
-	maxX := max(int(p1.X), max(int(p2.X), int(p3.X)))
-	minY := min(int(p1.Y), min(int(p2.Y), int(p3.Y)))
-	maxY := max(int(p1.Y), max(int(p2.Y), int(p3.Y)))
+func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
+	minX := min(int(p1.X()), min(int(p2.X()), int(p3.X())))
+	maxX := max(int(p1.X()), max(int(p2.X()), int(p3.X())))
+	minY := min(int(p1.Y()), min(int(p2.Y()), int(p3.Y())))
+	maxY := max(int(p1.Y()), max(int(p2.Y()), int(p3.Y())))
 	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
 }
