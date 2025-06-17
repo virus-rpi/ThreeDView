@@ -201,21 +201,17 @@ func (w *ThreeDWidget) render() image.Image {
 			if clippedPolys == nil {
 				return
 			}
-			for _, poly := range clippedPolys {
-				if len(poly) < 3 {
+			for _, tri := range clippedPolys {
+				if len(tri) != 3 {
 					continue
 				}
-				for i := 1; i+1 < len(poly); i++ {
-					p1 := poly[0]
-					p2 := poly[i]
-					p3 := poly[i+1]
-					if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
-						continue
-					}
-					mu.Lock()
-					projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]mgl.Vec2{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
-					mu.Unlock()
+				p1, p2, p3 := tri[0], tri[1], tri[2]
+				if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
+					continue
 				}
+				mu.Lock()
+				projectedFaces = append(projectedFaces, ProjectedFaceData{Face: [3]mgl.Vec2{p1, p2, p3}, Color: face.Color, Distance: face.Distance})
+				mu.Unlock()
 			}
 		}(face)
 	}

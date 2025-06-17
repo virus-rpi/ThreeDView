@@ -6,6 +6,7 @@ toolchain go1.23.3
 
 require (
 	fyne.io/fyne/v2 v2.6.1
+	github.com/flywave/go-earcut v0.0.0-20210712015426-7084f78cceb3
 	github.com/go-gl/mathgl v1.2.0
 )
 

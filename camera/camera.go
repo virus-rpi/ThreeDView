@@ -2,6 +2,7 @@ package camera
 
 import (
 	. "ThreeDView/types"
+	"github.com/flywave/go-earcut"
 	mgl "github.com/go-gl/mathgl/mgl64"
 )
 
@@ -115,7 +116,7 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl
 		return nil
 	}
 
-	var out []mgl.Vec2
+	var out2d []mgl.Vec2
 	for _, v := range clipped {
 		if v.W() == 0 {
 			continue
@@ -123,12 +124,27 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) [][]mgl
 		ndc := v.Mul(1.0 / v.W())
 		sx := (ndc.X() + 1) * 0.5 * float64(width)
 		sy := (1 - (ndc.Y()+1)*0.5) * float64(height)
-		out = append(out, mgl.Vec2{sx, sy})
+		out2d = append(out2d, mgl.Vec2{sx, sy})
 	}
-	if len(out) < 3 {
+	if len(out2d) < 3 {
 		return nil
 	}
-	return [][]mgl.Vec2{out}
+
+	var flat []float64
+	for _, v := range out2d {
+		flat = append(flat, v.X(), v.Y())
+	}
+	indices, _ := earcut.Earcut(flat, nil, 2)
+	var result [][]mgl.Vec2
+	for i := 0; i+2 < len(indices); i += 3 {
+		tri := []mgl.Vec2{
+			out2d[indices[i]],
+			out2d[indices[i+1]],
+			out2d[indices[i+2]],
+		}
+		result = append(result, tri)
+	}
+	return result
 }
 
 // clipPolygonHomogeneous clips a convex polygon in homogeneous clip space against the canonical view frustum
