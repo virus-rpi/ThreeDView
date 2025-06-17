@@ -171,12 +171,11 @@ func (w *ThreeDWidget) render() image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, int(Width), int(Height)))
 	draw.Draw(img, img.Bounds(), &image.Uniform{C: w.bgColor}, image.Point{}, draw.Src)
 
-	// Z-buffer initialization
 	zBuffer := make([][]float64, int(Width))
 	for i := range zBuffer {
-		zBuffer[i] = make([]float64, int(Height))
+		zBuffer[i] = make([]float64, Height)
 		for j := range zBuffer[i] {
-			zBuffer[i][j] = math.Inf(1) // Initialize to farthest possible
+			zBuffer[i][j] = math.Inf(1) // Initialize to the farthest possible
 		}
 	}
 
@@ -211,9 +210,6 @@ func (w *ThreeDWidget) render() image.Image {
 				return
 			}
 			for _, tri := range clippedPolys {
-				if len(tri.Points) != 3 {
-					continue
-				}
 				p1, p2, p3 := tri.Points[0], tri.Points[1], tri.Points[2]
 				z1, z2, z3 := tri.Z[0], tri.Z[1], tri.Z[2]
 				if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
@@ -237,10 +233,81 @@ func (w *ThreeDWidget) render() image.Image {
 	})
 
 	for _, face := range projectedFaces {
-		drawFaceZ(img, face, zBuffer, w.renderFaceOutlines, w.renderFaceColors)
+		if w.renderFaceColors {
+			drawFilledTriangleZ(img, face.Face, face.Z, face.Color, zBuffer)
+		}
+	}
+
+	if w.renderFaceOutlines {
+		for _, face := range projectedFaces {
+			var outlineColor color.Color
+			if !w.renderFaceColors {
+				outlineColor = face.Color
+			} else {
+				outlineColor = color.Black
+			}
+			drawOutlineWithZTest(img, face, zBuffer, outlineColor)
+		}
 	}
 
 	return img
+}
+
+func drawOutlineWithZTest(img *image.RGBA, face ProjectedFaceData, zBuffer [][]float64, outlineColor color.Color) {
+	drawEdgeWithZTest(img, face.Face[0], face.Z[0], face.Face[1], face.Z[1], outlineColor, zBuffer)
+	drawEdgeWithZTest(img, face.Face[1], face.Z[1], face.Face[2], face.Z[2], outlineColor, zBuffer)
+	drawEdgeWithZTest(img, face.Face[2], face.Z[2], face.Face[0], face.Z[0], outlineColor, zBuffer)
+}
+
+func drawEdgeWithZTest(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, color color.Color, zBuffer [][]float64) {
+	x0 := int(math.Round(p1.X()))
+	y0 := int(math.Round(p1.Y()))
+	x1 := int(math.Round(p2.X()))
+	y1 := int(math.Round(p2.Y()))
+	dx := int(math.Abs(float64(x1 - x0)))
+	dy := int(math.Abs(float64(y1 - y0)))
+	sx := -1
+	if x0 < x1 {
+		sx = 1
+	}
+	sy := -1
+	if y0 < y1 {
+		sy = 1
+	}
+	err := dx - dy
+	maxIter := dx + dy + 10
+	iter := 0
+	for {
+		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
+			var t float64
+			totalDist := math.Hypot(float64(x1-x0), float64(y1-y0))
+			if totalDist != 0 {
+				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / totalDist
+			} else {
+				t = 0
+			}
+			z := z1 + (z2-z1)*t
+			if z <= zBuffer[x0][y0] {
+				img.Set(x0, y0, color)
+			}
+		}
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x0 += sx
+		}
+		if e2 < dx {
+			err += dx
+			y0 += sy
+		}
+		iter++
+		if iter > maxIter {
+			break
+		}
+	}
 }
 
 func (w *ThreeDWidget) Dragged(event *fyne.DragEvent) {
@@ -289,117 +356,6 @@ func (r *threeDRenderer) Objects() []fyne.CanvasObject {
 
 func (r *threeDRenderer) Destroy() {}
 
-func drawFace(img *image.RGBA, face ProjectedFaceData, renderFaceOutlines bool, renderFaceColors bool) {
-	if renderFaceColors {
-		drawFilledTriangle(img, face.Face[0], face.Face[1], face.Face[2], face.Color)
-	}
-
-	if !renderFaceOutlines {
-		log.Println("drawFace: skipping outlines")
-		return
-	}
-	var outlineColor color.Color
-	if !renderFaceColors {
-		outlineColor = face.Color
-	} else {
-		outlineColor = color.Black
-	}
-	point1 := face.Face[0]
-	point2 := face.Face[1]
-	point3 := face.Face[2]
-	drawLine(img, point1, point2, outlineColor)
-	drawLine(img, point2, point3, outlineColor)
-	drawLine(img, point3, point1, outlineColor)
-}
-
-func drawLine(img *image.RGBA, point1, point2 mgl.Vec2, lineColor color.Color) {
-	x0 := int(math.Round(point1.X()))
-	y0 := int(math.Round(point1.Y()))
-	x1 := int(math.Round(point2.X()))
-	y1 := int(math.Round(point2.Y()))
-	if math.IsNaN(point1.X()) || math.IsNaN(point1.Y()) || math.IsNaN(point2.X()) || math.IsNaN(point2.Y()) ||
-		math.IsInf(point1.X(), 0) || math.IsInf(point1.Y(), 0) || math.IsInf(point2.X(), 0) || math.IsInf(point2.Y(), 0) {
-		log.Println("drawLine: NaN or Inf detected, skipping line")
-		return
-	}
-	dx := int(math.Abs(float64(x1 - x0)))
-	dy := int(math.Abs(float64(y1 - y0)))
-	sx := -1
-	if x0 < x1 {
-		sx = 1
-	}
-	sy := -1
-	if y0 < y1 {
-		sy = 1
-	}
-	err := dx - dy
-	maxIter := dx + dy + 10
-	iter := 0
-	for {
-		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
-			img.Set(x0, y0, lineColor)
-		}
-		if x0 == x1 && y0 == y1 {
-			break
-		}
-		e2 := 2 * err
-		if e2 > -dy {
-			err -= dy
-			x0 += sx
-		}
-		if e2 < dx {
-			err += dx
-			y0 += sy
-		}
-		iter++
-		if iter > maxIter {
-			log.Println("drawLine: max iterations reached, breaking to avoid infinite loop")
-			break
-		}
-	}
-}
-
-func drawFilledTriangle(img *image.RGBA, p1, p2, p3 mgl.Vec2, fillColor color.Color) {
-	if p2.Y() < p1.Y() {
-		p1, p2 = p2, p1
-	}
-	if p3.Y() < p1.Y() {
-		p1, p3 = p3, p1
-	}
-	if p3.Y() < p2.Y() {
-		p2, p3 = p3, p2
-	}
-	drawHorizontalLine := func(y, x1, x2 Pixel, color color.Color) {
-		if x1 > x2 {
-			x1, x2 = x2, x1
-		}
-		for x := x1; x <= x2; x++ {
-			if y >= 0 && y < Height && x >= 0 && x < Width {
-				img.Set(int(x), int(y), color)
-			}
-		}
-	}
-
-	interpolateX := func(y, y1, y2, x1, x2 float64) Pixel {
-		if y1 == y2 {
-			return Pixel(x1)
-		}
-		return Pixel(x1 + (x2-x1)*(y-y1)/(y2-y1))
-	}
-
-	for yf := p1.Y(); yf <= p2.Y(); yf++ {
-		x1 := interpolateX(yf, p1.Y(), p2.Y(), p1.X(), p2.X())
-		x2 := interpolateX(yf, p1.Y(), p3.Y(), p1.X(), p3.X())
-		drawHorizontalLine(Pixel(yf), x1, x2, fillColor)
-	}
-
-	for yf := p2.Y(); yf <= p3.Y(); yf++ {
-		x1 := interpolateX(yf, p2.Y(), p3.Y(), p2.X(), p3.X())
-		x2 := interpolateX(yf, p1.Y(), p3.Y(), p1.X(), p3.X())
-		drawHorizontalLine(Pixel(yf), x1, x2, fillColor)
-	}
-}
-
 func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
 	minX := min(int(p1.X()), min(int(p2.X()), int(p3.X())))
 	maxX := max(int(p1.X()), max(int(p2.X()), int(p3.X())))
@@ -408,94 +364,13 @@ func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
 	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
 }
 
-func drawFaceZ(img *image.RGBA, face ProjectedFaceData, zBuffer [][]float64, renderFaceOutlines bool, renderFaceColors bool) {
-	if renderFaceColors {
-		drawFilledTriangleZ(img, face.Face, face.Z, face.Color, zBuffer)
-	}
-
-	if !renderFaceOutlines {
-		log.Println("drawFaceZ: skipping outlines")
-		return
-	}
-	var outlineColor color.Color
-	if !renderFaceColors {
-		outlineColor = face.Color
-	} else {
-		outlineColor = color.Black
-	}
-	// Pass z values for each edge
-	drawLineZ(img, face.Face[0], face.Z[0], face.Face[1], face.Z[1], outlineColor, zBuffer)
-	drawLineZ(img, face.Face[1], face.Z[1], face.Face[2], face.Z[2], outlineColor, zBuffer)
-	drawLineZ(img, face.Face[2], face.Z[2], face.Face[0], face.Z[0], outlineColor, zBuffer)
-}
-
-func drawLineZ(img *image.RGBA, point1 mgl.Vec2, z1 float64, point2 mgl.Vec2, z2 float64, lineColor color.Color, zBuffer [][]float64) {
-	x0 := int(math.Round(point1.X()))
-	y0 := int(math.Round(point1.Y()))
-	x1 := int(math.Round(point2.X()))
-	y1 := int(math.Round(point2.Y()))
-	if math.IsNaN(point1.X()) || math.IsNaN(point1.Y()) || math.IsNaN(point2.X()) || math.IsNaN(point2.Y()) ||
-		math.IsInf(point1.X(), 0) || math.IsInf(point1.Y(), 0) || math.IsInf(point2.X(), 0) || math.IsInf(point2.Y(), 0) {
-		log.Println("drawLineZ: NaN or Inf detected, skipping line")
-		return
-	}
-	dx := int(math.Abs(float64(x1 - x0)))
-	dy := int(math.Abs(float64(y1 - y0)))
-	sx := -1
-	if x0 < x1 {
-		sx = 1
-	}
-	sy := -1
-	if y0 < y1 {
-		sy = 1
-	}
-	err := dx - dy
-	maxIter := dx + dy + 10
-	iter := 0
-	for {
-		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
-			var t float64
-			totalDist := math.Hypot(float64(x1-x0), float64(y1-y0))
-			if totalDist != 0 {
-				t = math.Hypot(float64(x0-int(math.Round(point1.X()))), float64(y0-int(math.Round(point1.Y())))) / totalDist
-			} else {
-				t = 0
-			}
-			z := z1 + (z2-z1)*t
-			if z < zBuffer[x0][y0] {
-				zBuffer[x0][y0] = z
-				img.Set(x0, y0, lineColor)
-			}
-		}
-		if x0 == x1 && y0 == y1 {
-			break
-		}
-		e2 := 2 * err
-		if e2 > -dy {
-			err -= dy
-			x0 += sx
-		}
-		if e2 < dx {
-			err += dx
-			y0 += sy
-		}
-		iter++
-		if iter > maxIter {
-			log.Println("drawLineZ: max iterations reached, breaking to avoid infinite loop")
-			break
-		}
-	}
-}
-
 func drawFilledTriangleZ(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor color.Color, zBuffer [][]float64) {
-	// Sort vertices by Y
 	v := [3]struct {
 		p mgl.Vec2
 		z float64
 	}{
 		{p[0], z[0]}, {p[1], z[1]}, {p[2], z[2]},
 	}
-	// Bubble sort for 3 elements
 	if v[1].p.Y() < v[0].p.Y() {
 		v[0], v[1] = v[1], v[0]
 	}
