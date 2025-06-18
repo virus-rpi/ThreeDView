@@ -266,7 +266,7 @@ func (w *ThreeDWidget) render() image.Image {
 	}
 
 	if w.renderEdgeOutline {
-		edgeMask := detectZBufferEdges(zBuffer, 0.001) // threshold can be tuned
+		edgeMask := detectZBufferEdges(zBuffer, 0.05) // threshold can be tuned
 		thickness := 2
 		outlineColor := color.Black
 		for x := 0; x < int(Width); x++ {
@@ -285,7 +285,6 @@ func (w *ThreeDWidget) render() image.Image {
 		}
 	}
 
-	// If both edge outline and Z-buffer debug are enabled, blend the edge mask over the Z-buffer debug image
 	if w.renderZBufferDebug {
 		debugImg := image.NewGray(img.Bounds())
 		var minZ, maxZ = math.Inf(1), math.Inf(-1)
@@ -318,7 +317,6 @@ func (w *ThreeDWidget) render() image.Image {
 				maxZ = 1
 			}
 		}
-		// Compute edge mask if needed
 		var edgeMask [][]bool
 		if w.renderEdgeOutline {
 			edgeMask = detectZBufferEdges(zBuffer, 0.05)
@@ -343,7 +341,7 @@ func (w *ThreeDWidget) render() image.Image {
 					gray = uint8(normalizedZ * 255)
 				}
 				if w.renderEdgeOutline && edgeMask != nil && edgeMask[x][y] {
-					gray = 0 // Draw edge as black
+					gray = 0
 				}
 				debugImg.SetGray(x, y, color.Gray{Y: gray})
 			}
@@ -363,36 +361,50 @@ func detectZBufferEdges(zBuffer [][]float64, threshold float64) [][]bool {
 		mask[i] = make([]bool, h)
 	}
 
-	// Find min and max finite Z values for normalization
-	minZ, maxZ := math.Inf(1), math.Inf(-1)
+	// Collect all valid log(z) values for percentile normalization
+	var logzVals []float64
 	for x := 0; x < w; x++ {
 		for y := 0; y < h; y++ {
 			z := zBuffer[x][y]
-			if !math.IsInf(z, 1) && !math.IsInf(z, -1) {
-				if z < minZ {
-					minZ = z
-				}
-				if z > maxZ {
-					maxZ = z
-				}
+			if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
+				logzVals = append(logzVals, math.Log(z))
 			}
 		}
 	}
+	if len(logzVals) == 0 {
+		return mask
+	}
+	sort.Float64s(logzVals)
+	lowIdx := int(0.02 * float64(len(logzVals)))
+	highIdx := int(0.98 * float64(len(logzVals)))
+	if highIdx <= lowIdx {
+		lowIdx = 0
+		highIdx = len(logzVals) - 1
+	}
+	minZ := logzVals[lowIdx]
+	maxZ := logzVals[highIdx]
 	if minZ == maxZ {
-		minZ = 0
-		maxZ = 1
+		minZ = logzVals[0]
+		maxZ = logzVals[len(logzVals)-1]
+		if minZ == maxZ {
+			minZ = 0
+			maxZ = 1
+		}
 	}
 
-	// Normalize Z-buffer to [0,1], replace inf with maxZ
+	// Normalize Z-buffer to [0,1] using log(z), replace inf or non-positive with maxZ
 	normZ := make([][]float64, w)
 	for x := 0; x < w; x++ {
 		normZ[x] = make([]float64, h)
 		for y := 0; y < h; y++ {
 			z := zBuffer[x][y]
-			if math.IsInf(z, 1) || math.IsInf(z, -1) {
-				z = maxZ
+			var logz float64
+			if math.IsInf(z, 1) || math.IsInf(z, -1) || z <= 0 {
+				logz = maxZ
+			} else {
+				logz = math.Log(z)
 			}
-			normZ[x][y] = (z - minZ) / (maxZ - minZ)
+			normZ[x][y] = (logz - minZ) / (maxZ - minZ)
 		}
 	}
 
