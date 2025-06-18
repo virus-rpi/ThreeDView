@@ -4,6 +4,7 @@ import (
 	. "ThreeDView/types"
 	"github.com/flywave/go-earcut"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"math"
 )
 
 // Camera represents a camera in 3D space
@@ -29,7 +30,7 @@ func (camera *Camera) SetController(controller Controller) {
 func (camera *Camera) Project(point mgl.Vec3, width, height Pixel) mgl.Vec2 {
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, math.MaxFloat64)
 	win := mgl.Project(point, view, proj, 0, 0, int(width), int(height))
 	return mgl.Vec2{win.X(), float64(height) - win.Y()}
 }
@@ -40,7 +41,7 @@ func (camera *Camera) UnProject(point2d mgl.Vec2, distance Unit, width, height P
 	winFar := mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 1.0}
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, math.MaxFloat64)
 	nearPoint, _ := mgl.UnProject(winNear, view, proj, 0, 0, int(width), int(height))
 	farPoint, _ := mgl.UnProject(winFar, view, proj, 0, 0, int(width), int(height))
 	dir := farPoint.Sub(nearPoint).Normalize()
@@ -51,7 +52,7 @@ func (camera *Camera) UnProject(point2d mgl.Vec2, distance Unit, width, height P
 func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, math.MaxFloat64)
 
 	projected := [3]mgl.Vec3{}
 	for i := 0; i < 3; i++ {
@@ -117,7 +118,10 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struc
 } {
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, 10000.0)
+
+	// Use a very large far plane, but not math.MaxFloat64 to avoid numerical instability
+	farPlane := 1e30 // Much larger than before, but not so large it causes precision issues
+	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, farPlane)
 	mvp := proj.Mul4(view)
 
 	vertices := make([]mgl.Vec4, 3)
@@ -135,7 +139,7 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struc
 	var out2d []mgl.Vec2
 	var outz []float64
 	for _, v := range clipped {
-		if v.W() == 0 {
+		if v.W() <= 0 { // Changed from == 0 to <= 0 to handle points at or beyond infinity
 			continue
 		}
 		ndc := v.Mul(1.0 / v.W())
