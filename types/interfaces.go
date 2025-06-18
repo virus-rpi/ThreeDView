@@ -12,4 +12,5 @@ type ThreeDWidgetInterface interface {
 	GetRenderFaceOutlines() bool
 	GetRenderEdgeOutlines() bool
 	GetRenderZBuffer() bool
+	GetRenderPseudoShading() bool
 }

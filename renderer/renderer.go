@@ -156,6 +156,9 @@ func (r *Renderer) renderZBuffer() {
 		lowIdx = 0
 		highIdx = len(logZVals) - 1
 	}
+	if len(logZVals) == 0 {
+		r.img = img
+	}
 	minZ, maxZ := logZVals[lowIdx], logZVals[highIdx]
 	if minZ == maxZ {
 		minZ, maxZ = 0, 1
@@ -179,10 +182,80 @@ func (r *Renderer) renderZBuffer() {
 				}
 				gray = uint8(norm * 255)
 			}
-			img.Set(x, y, color.Gray{Y: gray})
+			img.Set(x, y, color.Gray{Y: 255 - gray})
 		}
 	}
 	r.img = img
+}
+
+func (r *Renderer) renderPseudoShading() {
+	if !r.widget.GetRenderPseudoShading() {
+		return
+	}
+
+	const minShadeFactor = 0.7
+	const maxShadeFactor = 1.0
+
+	var zVals []float64
+	for x := 0; x < r.img.Bounds().Dx(); x++ {
+		for y := 0; y < r.img.Bounds().Dy(); y++ {
+			if len(r.zBuffer) <= x || len(r.zBuffer[x]) <= y {
+				continue
+			}
+			z := r.zBuffer[x][y]
+			if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
+				zVals = append(zVals, z)
+			}
+		}
+	}
+	if len(zVals) == 0 {
+		return
+	}
+	sort.Float64s(zVals)
+	lowIdx := int(0.02 * float64(len(zVals)))
+	highIdx := int(0.98 * float64(len(zVals)))
+	if highIdx <= lowIdx {
+		lowIdx = 0
+		highIdx = len(zVals) - 1
+	}
+	if len(zVals) == 0 {
+		return
+	}
+	minZ, maxZ := zVals[lowIdx], zVals[highIdx]
+	if minZ == maxZ {
+		minZ, maxZ = 0, 1
+	}
+
+	for x := 0; x < r.img.Bounds().Dx(); x++ {
+		for y := 0; y < r.img.Bounds().Dy(); y++ {
+			if len(r.zBuffer) <= x || len(r.zBuffer[x]) <= y {
+				log.Println("Skipping pixel due to out of bounds zBuffer access at", x, y)
+				continue
+			}
+			z := r.zBuffer[x][y]
+
+			if !math.IsInf(z, 1) && z > 0 {
+				norm := (z - minZ) / (maxZ - minZ)
+				if norm < 0 {
+					norm = 0
+				}
+				if norm > 1 {
+					norm = 1
+				}
+
+				shadeFactor := maxShadeFactor - (norm * (maxShadeFactor - minShadeFactor))
+
+				originalColor := r.img.At(x, y).(color.RGBA)
+				newColor := color.RGBA{
+					R: uint8(float64(originalColor.R) * shadeFactor),
+					G: uint8(float64(originalColor.G) * shadeFactor),
+					B: uint8(float64(originalColor.B) * shadeFactor),
+					A: originalColor.A,
+				}
+				r.img.Set(x, y, newColor)
+			}
+		}
+	}
 }
 
 func (r *Renderer) renderEdgeOutlines() {
@@ -222,6 +295,7 @@ func (r *Renderer) Render() image.Image {
 	r.renderFaceOutlines(faces)
 	r.renderZBuffer()
 	r.renderEdgeOutlines()
+	r.renderPseudoShading()
 	log.Println("Rendering took", time.Since(startTime2))
 	log.Println("FPS:", int(1.0/time.Since(startTime1).Seconds()))
 	return r.img

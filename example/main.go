@@ -72,6 +72,11 @@ func main() {
 	})
 	textureCheck.SetChecked(true)
 
+	shadingCheck := widget.NewCheck("Use Pseudo Shading", func(checked bool) {
+		threeDEnv.SetRenderPseudoShading(checked)
+	})
+	shadingCheck.SetChecked(true)
+
 	controls := container.New(
 		layout.NewVBoxLayout(),
 		zBufferCheck,
@@ -79,6 +84,7 @@ func main() {
 		faceOutlineCheck,
 		faceColorCheck,
 		textureCheck,
+		shadingCheck,
 	)
 	controlWindow.SetContent(controls)
 	controlWindow.Show()

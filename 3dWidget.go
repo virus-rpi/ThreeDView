@@ -24,37 +24,31 @@ var (
 // ThreeDWidget is a widget that displays 3D objects
 type ThreeDWidget struct {
 	widget.BaseWidget
-	image                    *canvas.Image // The image that is rendered on
-	camera                   *Camera       // The camera of the 3D widget
-	objects                  []*Object     // The objects in the 3D widget
-	tickMethods              []func()      // The methods that are called every frame
-	bgColor                  color.Color   // The background color of the 3D widget
-	renderFaceOutlines       bool          // Whether the faces should be rendered with outlines
-	renderFaceColors         bool          // Whether the faces should be rendered with colors
-	renderTextures           bool          // Whether to use textures for rendering (if available)
-	renderEdgeOutline        bool          // Whether to render edge outlines using Z-buffer edge detection
-	renderZBufferDebug       bool          // If true, render Z-buffer as grayscale overlay
-	fpsCap                   float64       // The maximum frames per second the widget should render at
-	tpsCap                   float64       // The maximum ticks per second the widget should tick at
-	edgeThreshold            float64       // Base threshold for edge detection
-	depthDistanceModulation  float64       // Factor for depth-based modulation of edge threshold
-	grazingAngleMaskPower    float64       // Power factor for grazing angle mask
-	grazingAngleMaskHardness float64       // Hardness factor for grazing angle mask
-	renderer                 *renderer.Renderer
+	image               *canvas.Image // The image that is rendered on
+	camera              *Camera       // The camera of the 3D widget
+	objects             []*Object     // The objects in the 3D widget
+	tickMethods         []func()      // The methods that are called every frame
+	bgColor             color.Color   // The background color of the 3D widget
+	renderFaceOutlines  bool          // Whether the faces should be rendered with outlines
+	renderFaceColors    bool          // Whether the faces should be rendered with colors
+	renderTextures      bool          // Whether to use textures for rendering (if available)
+	renderEdgeOutline   bool          // Whether to render edge outlines using Z-buffer edge detection
+	renderZBuffer       bool          // If true, render Z-buffer as grayscale overlay
+	renderPseudoShading bool          // If true, render pseudo-shading based on depth
+	fpsCap              float64       // The maximum frames per second the widget should render at
+	tpsCap              float64       // The maximum ticks per second the widget should tick at
+	renderer            *renderer.Renderer
 }
 
 // NewThreeDWidget creates a new 3D widget
 func NewThreeDWidget() *ThreeDWidget {
 	w := &ThreeDWidget{
-		bgColor:                  color.Transparent,
-		renderFaceColors:         true,
-		renderTextures:           true,
-		fpsCap:                   math.Inf(1),
-		tpsCap:                   math.Inf(1),
-		edgeThreshold:            0.05,
-		depthDistanceModulation:  0.1,
-		grazingAngleMaskPower:    5.0,
-		grazingAngleMaskHardness: 0.5,
+		bgColor:             color.Transparent,
+		renderFaceColors:    true,
+		renderTextures:      true,
+		renderPseudoShading: true,
+		fpsCap:              math.Inf(1),
+		tpsCap:              math.Inf(1),
 	}
 	w.renderer = renderer.NewRenderer(w)
 	w.ExtendBaseWidget(w)
@@ -149,7 +143,11 @@ func (w *ThreeDWidget) GetRenderEdgeOutlines() bool {
 }
 
 func (w *ThreeDWidget) GetRenderZBuffer() bool {
-	return w.renderZBufferDebug
+	return w.renderZBuffer
+}
+
+func (w *ThreeDWidget) GetRenderPseudoShading() bool {
+	return w.renderPseudoShading
 }
 
 // SetCamera sets the camera of the 3D widget
@@ -208,31 +206,11 @@ func (w *ThreeDWidget) SetRenderEdgeOutline(newVal bool) {
 
 // SetRenderZBufferDebug sets whether to render the Z-buffer as a grayscale debug overlay.
 func (w *ThreeDWidget) SetRenderZBufferDebug(newVal bool) {
-	w.renderZBufferDebug = newVal
+	w.renderZBuffer = newVal
 }
 
-// SetEdgeThreshold sets the base threshold for edge detection.
-// Higher values result in fewer edges being detected.
-func (w *ThreeDWidget) SetEdgeThreshold(threshold float64) {
-	w.edgeThreshold = threshold
-}
-
-// SetDepthDistanceModulation sets the factor for depth-based modulation of edge threshold.
-// Higher values increase the threshold for distant objects, reducing edge detection in the distance.
-func (w *ThreeDWidget) SetDepthDistanceModulation(factor float64) {
-	w.depthDistanceModulation = factor
-}
-
-// SetGrazingAngleMaskPower sets the power factor for grazing angle mask.
-// Higher values make edges at grazing angles more pronounced.
-func (w *ThreeDWidget) SetGrazingAngleMaskPower(power float64) {
-	w.grazingAngleMaskPower = power
-}
-
-// SetGrazingAngleMaskHardness sets the hardness factor for grazing angle mask.
-// Higher values make the transition between masked and unmasked edges sharper.
-func (w *ThreeDWidget) SetGrazingAngleMaskHardness(hardness float64) {
-	w.grazingAngleMaskHardness = hardness
+func (w *ThreeDWidget) SetRenderPseudoShading(newVal bool) {
+	w.renderPseudoShading = newVal
 }
 
 func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
