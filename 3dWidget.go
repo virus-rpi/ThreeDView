@@ -11,7 +11,6 @@ import (
 	mgl "github.com/go-gl/mathgl/mgl64"
 	"image"
 	"image/color"
-	"image/draw"
 	"log"
 	"math"
 	"sort"
@@ -64,7 +63,7 @@ func NewThreeDWidget() *ThreeDWidget {
 	standardCamera := NewCamera(mgl.Vec3{}, mgl.QuatIdent())
 	w.camera = &standardCamera
 	w.objects = []*Object{}
-	w.image = canvas.NewImageFromImage(w.render())
+	w.image = canvas.NewImageFromImage(w.renderer.Render())
 	go w.renderLoop()
 	go w.tickLoop()
 	return w
@@ -97,7 +96,7 @@ func (w *ThreeDWidget) renderLoop() {
 		}
 		start := time.Now()
 		frameDur := time.Second / time.Duration(w.fpsCap)
-		w.image.Image = w.render()
+		w.image.Image = w.renderer.Render()
 		fyne.Do(func() { canvas.Refresh(w.image) })
 		elapsed := time.Since(start)
 		if elapsed < frameDur {
@@ -141,6 +140,18 @@ func (w *ThreeDWidget) GetRenderFaceColors() bool {
 
 func (w *ThreeDWidget) GetRenderTextures() bool {
 	return w.renderTextures
+}
+
+func (w *ThreeDWidget) GetRenderFaceOutlines() bool {
+	return w.renderFaceOutlines
+}
+
+func (w *ThreeDWidget) GetRenderEdgeOutlines() bool {
+	return w.renderEdgeOutline
+}
+
+func (w *ThreeDWidget) GetRenderZBuffer() bool {
+	return w.renderZBufferDebug
 }
 
 // SetCamera sets the camera of the 3D widget
@@ -232,33 +243,12 @@ func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 
 func (w *ThreeDWidget) render() image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, int(Width), int(Height)))
-	draw.Draw(img, img.Bounds(), &image.Uniform{C: w.bgColor}, image.Point{}, draw.Src)
-
-	if len(w.objects) == 0 {
-		return img
-	}
 
 	zBuffer := make([][]float64, int(Width))
 	for i := range zBuffer {
 		zBuffer[i] = make([]float64, Height)
 		for j := range zBuffer[i] {
 			zBuffer[i][j] = math.Inf(1)
-		}
-	}
-
-	projectedFaces := []ProjectedFaceData{}
-
-	if w.renderFaceOutlines {
-		for _, face := range projectedFaces {
-			var outlineColor color.Color
-			if !w.renderFaceColors {
-				outlineColor = face.Color
-			} else {
-				outlineColor = color.Black
-			}
-			drawEdge(img, face.Face[0], face.Z[0], face.Face[1], face.Z[1], outlineColor, zBuffer)
-			drawEdge(img, face.Face[1], face.Z[1], face.Face[2], face.Z[2], outlineColor, zBuffer)
-			drawEdge(img, face.Face[2], face.Z[2], face.Face[0], face.Z[0], outlineColor, zBuffer)
 		}
 	}
 
@@ -280,62 +270,6 @@ func (w *ThreeDWidget) render() image.Image {
 				}
 			}
 		}
-	}
-
-	if w.renderZBufferDebug {
-		debugImg := image.NewGray(img.Bounds())
-		var logzVals []float64
-		for x := 0; x < int(Width); x++ {
-			for y := 0; y < int(Height); y++ {
-				if len(zBuffer) <= x || len(zBuffer[x]) <= y {
-					continue
-				}
-				z := zBuffer[x][y]
-				if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
-					logzVals = append(logzVals, math.Log(z))
-				}
-			}
-		}
-		if len(logzVals) == 0 {
-			return debugImg
-		}
-		sort.Float64s(logzVals)
-		lowIdx := int(0.02 * float64(len(logzVals)))
-		highIdx := int(0.98 * float64(len(logzVals)))
-		if highIdx <= lowIdx {
-			lowIdx = 0
-			highIdx = len(logzVals) - 1
-		}
-		minZ, maxZ := logzVals[lowIdx], logzVals[highIdx]
-		if minZ == maxZ {
-			minZ, maxZ = 0, 1
-		}
-		var edgeMask [][]bool
-		if w.renderEdgeOutline {
-			edgeMask = detectZBufferEdges(zBuffer, w.edgeThreshold, w.depthDistanceModulation, w.grazingAngleMaskPower, w.grazingAngleMaskHardness)
-		}
-		for x := 0; x < int(Width); x++ {
-			for y := 0; y < int(Height); y++ {
-				z := zBuffer[x][y]
-				var gray uint8 = 255
-				if !math.IsInf(z, 1) && z > 0 {
-					logz := math.Log(z)
-					norm := (logz - minZ) / (maxZ - minZ)
-					if norm < 0 {
-						norm = 0
-					}
-					if norm > 1 {
-						norm = 1
-					}
-					gray = uint8(norm * 255)
-				}
-				if w.renderEdgeOutline && edgeMask != nil && edgeMask[x][y] {
-					gray = 0
-				}
-				debugImg.SetGray(x, y, color.Gray{Y: gray})
-			}
-		}
-		return debugImg
 	}
 	return w.renderer.Render()
 }
@@ -464,182 +398,3 @@ func (r *threeDRenderer) Objects() []fyne.CanvasObject {
 }
 
 func (r *threeDRenderer) Destroy() {}
-
-func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
-	minX := min(int(p1.X()), min(int(p2.X()), int(p3.X())))
-	maxX := max(int(p1.X()), max(int(p2.X()), int(p3.X())))
-	minY := min(int(p1.Y()), min(int(p2.Y()), int(p3.Y())))
-	maxY := max(int(p1.Y()), max(int(p2.Y()), int(p3.Y())))
-	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
-}
-
-func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fill color.Color, zBuffer [][]float64, textureImg image.Image, texCoords [3]mgl.Vec2, useTexture bool) {
-	v := [3]struct {
-		p mgl.Vec2
-		z float64
-		t mgl.Vec2 // Texture coordinate
-	}{{p[0], z[0], texCoords[0]}, {p[1], z[1], texCoords[1]}, {p[2], z[2], texCoords[2]}}
-
-	// Sort vertices by Y coordinate
-	if v[1].p.Y() < v[0].p.Y() {
-		v[0], v[1] = v[1], v[0]
-	}
-	if v[2].p.Y() < v[0].p.Y() {
-		v[0], v[2] = v[2], v[0]
-	}
-	if v[2].p.Y() < v[1].p.Y() {
-		v[1], v[2] = v[2], v[1]
-	}
-
-	// Function to interpolate values along a line
-	interpolate := func(y, y1, y2, x1, x2, z1, z2 float64, t1, t2 mgl.Vec2) (Pixel, float64, mgl.Vec2) {
-		if y1 == y2 {
-			return Pixel(x1), z1, t1
-		}
-		t := (y - y1) / (y2 - y1)
-		return Pixel(x1 + (x2-x1)*t),
-			z1 + (z2-z1)*t,
-			mgl.Vec2{t1.X() + (t2.X()-t1.X())*t, t1.Y() + (t2.Y()-t1.Y())*t}
-	}
-
-	// Get color from texture at the specified coordinates
-	getTextureColor := func(texImg image.Image, texCoord mgl.Vec2) color.Color {
-		if texImg == nil {
-			return fill
-		}
-
-		bounds := texImg.Bounds()
-		width := bounds.Dx()
-		height := bounds.Dy()
-
-		// Convert texture coordinates to pixel coordinates
-		x := int(math.Floor(texCoord.X() * float64(width-1)))
-		y := int(math.Floor((1.0 - texCoord.Y()) * float64(height-1))) // Flip Y coordinate
-
-		// Clamp to texture bounds
-		if x < 0 {
-			x = 0
-		} else if x >= width {
-			x = width - 1
-		}
-		if y < 0 {
-			y = 0
-		} else if y >= height {
-			y = height - 1
-		}
-
-		return texImg.At(x, y)
-	}
-
-	// Draw the upper part of the triangle
-	for yf := math.Ceil(v[0].p.Y()); yf <= v[1].p.Y(); yf++ {
-		x1, z1, t1 := interpolate(yf, v[0].p.Y(), v[1].p.Y(), v[0].p.X(), v[1].p.X(), v[0].z, v[1].z, v[0].t, v[1].t)
-		x2, z2, t2 := interpolate(yf, v[0].p.Y(), v[2].p.Y(), v[0].p.X(), v[2].p.X(), v[0].z, v[2].z, v[0].t, v[2].t)
-		if x1 > x2 {
-			x1, x2, z1, z2, t1, t2 = x2, x1, z2, z1, t2, t1
-		}
-		for x := int(math.Ceil(float64(x1))); float64(x) <= float64(x2); x++ {
-			if x >= 0 && x < int(Width) && int(yf) >= 0 && int(yf) < int(Height) {
-				t := 0.0
-				if x2 != x1 {
-					t = float64(x-int(x1)) / float64(x2-x1)
-				}
-				z := z1 + (z2-z1)*t
-				texCoord := mgl.Vec2{t1.X() + (t2.X()-t1.X())*t, t1.Y() + (t2.Y()-t1.Y())*t}
-
-				if x >= len(zBuffer) || int(yf) >= len(zBuffer[x]) {
-					continue
-				}
-				if z < zBuffer[x][int(yf)] {
-					zBuffer[x][int(yf)] = z
-
-					// Use texture if available and enabled
-					if useTexture && textureImg != nil {
-						img.Set(x, int(yf), getTextureColor(textureImg, texCoord))
-					} else {
-						img.Set(x, int(yf), fill)
-					}
-				}
-			}
-		}
-	}
-
-	// Draw the lower part of the triangle
-	for yf := v[1].p.Y(); yf <= v[2].p.Y(); yf++ {
-		x1, z1, t1 := interpolate(yf, v[1].p.Y(), v[2].p.Y(), v[1].p.X(), v[2].p.X(), v[1].z, v[2].z, v[1].t, v[2].t)
-		x2, z2, t2 := interpolate(yf, v[0].p.Y(), v[2].p.Y(), v[0].p.X(), v[2].p.X(), v[0].z, v[2].z, v[0].t, v[2].t)
-		if x1 > x2 {
-			x1, x2, z1, z2, t1, t2 = x2, x1, z2, z1, t2, t1
-		}
-		for x := int(math.Ceil(float64(x1))); float64(x) <= float64(x2); x++ {
-			if x >= 0 && x < int(Width) && int(yf) >= 0 && int(yf) < int(Height) {
-				t := 0.0
-				if x2 != x1 {
-					t = float64(x-int(x1)) / float64(x2-x1)
-				}
-				z := z1 + (z2-z1)*t
-				texCoord := mgl.Vec2{t1.X() + (t2.X()-t1.X())*t, t1.Y() + (t2.Y()-t1.Y())*t}
-
-				if x >= len(zBuffer) || int(yf) >= len(zBuffer[x]) {
-					continue
-				}
-				if z < zBuffer[x][int(yf)] {
-					zBuffer[x][int(yf)] = z
-
-					// Use texture if available and enabled
-					if useTexture && textureImg != nil {
-						img.Set(x, int(yf), getTextureColor(textureImg, texCoord))
-					} else {
-						img.Set(x, int(yf), fill)
-					}
-				}
-			}
-		}
-	}
-}
-
-func drawEdge(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, c color.Color, zBuffer [][]float64) {
-	x0, y0 := int(math.Round(p1.X())), int(math.Round(p1.Y()))
-	x1, y1 := int(math.Round(p2.X())), int(math.Round(p2.Y()))
-	dx, dy := int(math.Abs(float64(x1-x0))), int(math.Abs(float64(y1-y0)))
-	sx, sy := 1, 1
-	if x0 > x1 {
-		sx = -1
-	}
-	if y0 > y1 {
-		sy = -1
-	}
-	err, maxIter, iter := dx-dy, dx+dy+10, 0
-	for {
-		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
-			t := 0.0
-			total := math.Hypot(float64(x1-x0), float64(y1-y0))
-			if total != 0 {
-				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / total
-			}
-			z := z1 + (z2-z1)*t
-			if x0 >= len(zBuffer) || y0 >= len(zBuffer[x0]) {
-				return
-			}
-			if z <= zBuffer[x0][y0] {
-				img.Set(x0, y0, c)
-			}
-		}
-		if x0 == x1 && y0 == y1 {
-			break
-		}
-		e2 := 2 * err
-		if e2 > -dy {
-			err -= dy
-			x0 += sx
-		}
-		if e2 < dx {
-			err += dx
-			y0 += sy
-		}
-		iter++
-		if iter > maxIter {
-			break
-		}
-	}
-}

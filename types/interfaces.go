@@ -9,4 +9,7 @@ type ThreeDWidgetInterface interface {
 	GetBackgroundColor() color.Color
 	GetRenderFaceColors() bool
 	GetRenderTextures() bool
+	GetRenderFaceOutlines() bool
+	GetRenderEdgeOutlines() bool
+	GetRenderZBuffer() bool
 }

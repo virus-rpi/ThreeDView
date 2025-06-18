@@ -130,3 +130,49 @@ func drawFilledTriangle(img *image.RGBA, face object.ProjectedFaceData, zBuffer 
 		}
 	}
 }
+
+func drawEdge(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, c color.Color, zBuffer [][]float64) {
+	x0, y0 := int(math.Round(p1.X())), int(math.Round(p1.Y()))
+	x1, y1 := int(math.Round(p2.X())), int(math.Round(p2.Y()))
+	dx, dy := int(math.Abs(float64(x1-x0))), int(math.Abs(float64(y1-y0)))
+	sx, sy := 1, 1
+	if x0 > x1 {
+		sx = -1
+	}
+	if y0 > y1 {
+		sy = -1
+	}
+	err, maxIter, iter := dx-dy, dx+dy+10, 0
+	for {
+		if x0 >= 0 && x0 < img.Bounds().Dx() && y0 >= 0 && y0 < img.Bounds().Dy() {
+			t := 0.0
+			total := math.Hypot(float64(x1-x0), float64(y1-y0))
+			if total != 0 {
+				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / total
+			}
+			z := z1 + (z2-z1)*t
+			if x0 >= len(zBuffer) || y0 >= len(zBuffer[x0]) {
+				return
+			}
+			if z <= zBuffer[x0][y0] {
+				img.Set(x0, y0, c)
+			}
+		}
+		if x0 == x1 && y0 == y1 {
+			break
+		}
+		e2 := 2 * err
+		if e2 > -dy {
+			err -= dy
+			x0 += sx
+		}
+		if e2 < dx {
+			err += dx
+			y0 += sy
+		}
+		iter++
+		if iter > maxIter {
+			break
+		}
+	}
+}
