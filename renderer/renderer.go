@@ -35,7 +35,7 @@ func NewRenderer(widget threeDWidgetInterface) *Renderer {
 		widget:        widget,
 		img:           nil,
 		zBuffer:       nil,
-		renderWorkers: make([]*renderWorker, 2),
+		renderWorkers: make([]*renderWorker, 20000),
 		workerChannel: make(chan *instruction),
 	}
 
@@ -43,25 +43,6 @@ func NewRenderer(widget threeDWidgetInterface) *Renderer {
 		renderer.renderWorkers[i] = newRenderWorker(renderer.widget, renderer.workerChannel)
 		go renderer.renderWorkers[i].start()
 	}
-
-	go func() {
-		for {
-			var states []string
-			for _, worker := range renderer.renderWorkers {
-				states = append(states, worker.State)
-			}
-			log.Println("Render worker states:", states)
-			var successCounts []int
-			for _, worker := range renderer.renderWorkers {
-				successCounts = append(successCounts, worker.Success)
-			}
-			log.Println("Render worker success counts:", successCounts)
-
-			time.Sleep(2 * time.Second)
-
-		}
-	}()
-
 	return renderer
 }
 
@@ -204,15 +185,43 @@ func (r *Renderer) renderZBuffer() {
 	r.img = img
 }
 
+func (r *Renderer) renderEdgeOutlines() {
+	if !r.widget.GetRenderEdgeOutlines() {
+		return
+	}
+	edgeMask := detectZBufferEdges(r.zBuffer, 0.05, 0.1, 5.0, 0.5)
+	thickness := 1
+	outlineColor := color.Black
+	for x := 0; x < r.img.Bounds().Dx(); x++ {
+		for y := 0; y < r.img.Bounds().Dy(); y++ {
+			if edgeMask[x][y] {
+				for dx := -thickness; dx <= thickness; dx++ {
+					for dy := -thickness; dy <= thickness; dy++ {
+						nx, ny := x+dx, y+dy
+						if nx >= 0 && nx < r.img.Bounds().Dx() && ny >= 0 && ny < r.img.Bounds().Dy() {
+							r.img.Set(nx, ny, outlineColor)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func (r *Renderer) Render() image.Image {
 	r.setupImg()
 	if len(r.widget.GetObjects()) == 0 {
 		return r.img
 	}
 	r.resetZBuffer()
+	startTime := time.Now()
 	faces := r.clipAndProjectFaces()
+	log.Println("Projection and clipping took", time.Since(startTime))
+	startTime = time.Now()
 	r.renderColors(faces)
 	r.renderFaceOutlines(faces)
 	r.renderZBuffer()
+	r.renderEdgeOutlines()
+	log.Println("Rendering took", time.Since(startTime))
 	return r.img
 }

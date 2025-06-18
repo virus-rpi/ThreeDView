@@ -18,16 +18,13 @@ type renderWorker struct {
 	w               threeDWidgetInterface
 	workerChannel   chan *instruction
 	shouldTerminate bool
-	State           string
-	Success         int
 }
 
 func newRenderWorker(w threeDWidgetInterface, workerChannel chan *instruction) *renderWorker {
-	return &renderWorker{w: w, workerChannel: workerChannel, shouldTerminate: false, State: "initialized", Success: 0}
+	return &renderWorker{w: w, workerChannel: workerChannel, shouldTerminate: false}
 }
 
 func (rw *renderWorker) start() {
-	rw.State = "idle"
 	for newInstruction := range rw.workerChannel {
 		rw.processInstruction(newInstruction)
 
@@ -39,7 +36,6 @@ func (rw *renderWorker) start() {
 }
 
 func (rw *renderWorker) processInstruction(instruction *instruction) {
-	rw.State = instruction.instructionType
 	switch instruction.instructionType {
 	case "terminate":
 		rw.shouldTerminate = true
@@ -51,10 +47,7 @@ func (rw *renderWorker) processInstruction(instruction *instruction) {
 		rw.clipAndProject(instruction)
 		break
 	}
-	rw.State = "done"
 	instruction.doneFunction()
-	rw.State = "idle"
-	rw.Success++
 }
 
 func (rw *renderWorker) getFacesInFrustum(instruction *instruction) {

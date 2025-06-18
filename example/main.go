@@ -28,9 +28,8 @@ func main() {
 	})
 	threeDEnv.SetResolutionFactor(1.0)
 
-	center, _ := object.NewObjectFromObjFile("./example/assets/stress-boat.obj", mgl.Vec3{0, 100, 0}, mgl.QuatIdent(), 100, color.RGBA{R: 255, B: 255, A: 255}, "./example/assets/stress-boat-texture.jpg", threeDEnv)
-
 	object.NewOrientationObject(threeDEnv)
+	center, _ := object.NewObjectFromObjFile("./example/assets/stress-boat.obj", mgl.Vec3{0, 100, 0}, mgl.QuatIdent(), 100, color.RGBA{R: 255, B: 255, A: 255}, "./example/assets/stress-boat-texture.jpg", threeDEnv)
 
 	envCamera := camera.NewCamera(mgl.Vec3{
 		500,
