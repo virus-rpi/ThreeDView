@@ -29,21 +29,6 @@ func main() {
 	})
 	threeDEnv.SetResolutionFactor(1.0)
 
-	object.NewPlane(5000, mgl.Vec3{
-		0,
-		0,
-		0,
-	},
-		mgl.QuatIdent(),
-		color.RGBA{
-			R: 0,
-			G: 255,
-			B: 0,
-			A: 255,
-		},
-		threeDEnv,
-		1)
-
 	center, _ := object.NewObjectFromObjFile("./stress-boat.obj", mgl.Vec3{0, 100, 0}, mgl.QuatIdent(), 100, color.RGBA{R: 255, B: 255, A: 255}, "./stress-boat-texture.jpg", threeDEnv)
 
 	object.NewOrientationObject(threeDEnv)

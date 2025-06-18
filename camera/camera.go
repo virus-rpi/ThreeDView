@@ -112,9 +112,12 @@ func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
 }
 
 // ClipAndProjectFace clips a polygon (in world space) to the camera frustum and returns the resulting polygon(s) in screen space
-func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struct {
-	Points [3]mgl.Vec2
-	Z      [3]float64
+// If texCoords is provided, texture coordinates will be interpolated for the clipped polygon
+func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel, texCoords ...[3]mgl.Vec2) []struct {
+	Points     [3]mgl.Vec2
+	Z          [3]float64
+	TexCoords  [3]mgl.Vec2
+	HasTexture bool
 } {
 	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
 	aspect := float64(width) / float64(height)
@@ -131,14 +134,39 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struc
 		vertices[i] = mvp.Mul4x1(v4)
 	}
 
-	clipped := clipPolygonHomogeneous(vertices)
-	if len(clipped) < 3 {
+	// Check if texture coordinates are provided
+	hasTexture := len(texCoords) > 0
+	var texCoordsArray [3]mgl.Vec2
+	if hasTexture {
+		texCoordsArray = texCoords[0]
+	}
+
+	// Create a map to track original vertex indices and their texture coordinates
+	vertexToTexCoord := make(map[int]mgl.Vec2)
+	for i := 0; i < 3; i++ {
+		if hasTexture {
+			vertexToTexCoord[i] = texCoordsArray[i]
+		}
+	}
+
+	// Clip the polygon in homogeneous space
+	var clippedVertices []mgl.Vec4
+	var clippedTexCoords []mgl.Vec2
+
+	if hasTexture {
+		clippedVertices, clippedTexCoords = clipPolygonHomogeneousWithTexCoords(vertices, vertexToTexCoord, hasTexture)
+	} else {
+		clippedVertices = clipPolygonHomogeneous(vertices)
+	}
+
+	if len(clippedVertices) < 3 {
 		return nil
 	}
 
 	var out2d []mgl.Vec2
 	var outz []float64
-	for _, v := range clipped {
+	var outtex []mgl.Vec2
+	for i, v := range clippedVertices {
 		if v.W() <= 0 { // Changed from == 0 to <= 0 to handle points at or beyond infinity
 			continue
 		}
@@ -147,6 +175,10 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struc
 		sy := (1 - (ndc.Y()+1)*0.5) * float64(height)
 		out2d = append(out2d, mgl.Vec2{sx, sy})
 		outz = append(outz, ndc.Z()) // Store NDC z value
+
+		if hasTexture {
+			outtex = append(outtex, clippedTexCoords[i])
+		}
 	}
 	if len(out2d) < 3 {
 		return nil
@@ -158,8 +190,10 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struc
 	}
 	indices, _ := earcut.Earcut(flat, nil, 2)
 	var result []struct {
-		Points [3]mgl.Vec2
-		Z      [3]float64
+		Points     [3]mgl.Vec2
+		Z          [3]float64
+		TexCoords  [3]mgl.Vec2
+		HasTexture bool
 	}
 	for i := 0; i+2 < len(indices); i += 3 {
 		tri := [3]mgl.Vec2{
@@ -172,10 +206,22 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel) []struc
 			outz[indices[i+1]],
 			outz[indices[i+2]],
 		}
+
+		var textri [3]mgl.Vec2
+		if hasTexture {
+			textri = [3]mgl.Vec2{
+				outtex[indices[i]],
+				outtex[indices[i+1]],
+				outtex[indices[i+2]],
+			}
+		}
+
 		result = append(result, struct {
-			Points [3]mgl.Vec2
-			Z      [3]float64
-		}{tri, ztri})
+			Points     [3]mgl.Vec2
+			Z          [3]float64
+			TexCoords  [3]mgl.Vec2
+			HasTexture bool
+		}{tri, ztri, textri, hasTexture})
 	}
 	return result
 }
@@ -214,6 +260,73 @@ func clipPolygonHomogeneous(vertices []mgl.Vec4) []mgl.Vec4 {
 		}
 	}
 	return out
+}
+
+// clipPolygonHomogeneousWithTexCoords clips a convex polygon in homogeneous clip space against the canonical view frustum
+// and interpolates texture coordinates for any new vertices created during clipping
+func clipPolygonHomogeneousWithTexCoords(vertices []mgl.Vec4, texCoords map[int]mgl.Vec2, hasTexture bool) ([]mgl.Vec4, []mgl.Vec2) {
+	if !hasTexture {
+		return clipPolygonHomogeneous(vertices), nil
+	}
+
+	planes := [][4]float64{
+		{1, 0, 0, 1},  // x <= w
+		{-1, 0, 0, 1}, // -x <= w
+		{0, 1, 0, 1},  // y <= w
+		{0, -1, 0, 1}, // -y <= w
+		{0, 0, 1, 1},  // z <= w
+		{0, 0, -1, 1}, // -z <= w
+	}
+
+	outVertices := vertices
+	outTexCoords := make([]mgl.Vec2, len(vertices))
+	for i := 0; i < len(vertices); i++ {
+		outTexCoords[i] = texCoords[i]
+	}
+
+	for _, p := range planes {
+		var clippedVertices []mgl.Vec4
+		var clippedTexCoords []mgl.Vec2
+
+		for i := 0; i < len(outVertices); i++ {
+			j := (i + 1) % len(outVertices)
+			a := outVertices[i]
+			b := outVertices[j]
+			ta := outTexCoords[i]
+			tb := outTexCoords[j]
+
+			ad := p[0]*a.X() + p[1]*a.Y() + p[2]*a.Z() + p[3]*a.W()
+			bd := p[0]*b.X() + p[1]*b.Y() + p[2]*b.Z() + p[3]*b.W()
+
+			if ad >= 0 {
+				clippedVertices = append(clippedVertices, a)
+				clippedTexCoords = append(clippedTexCoords, ta)
+			}
+
+			if (ad >= 0) != (bd >= 0) {
+				t := ad / (ad - bd)
+				iv := a.Add(b.Sub(a).Mul(t))
+
+				// Interpolate texture coordinates
+				itex := mgl.Vec2{
+					ta.X() + t*(tb.X()-ta.X()),
+					ta.Y() + t*(tb.Y()-ta.Y()),
+				}
+
+				clippedVertices = append(clippedVertices, iv)
+				clippedTexCoords = append(clippedTexCoords, itex)
+			}
+		}
+
+		outVertices = clippedVertices
+		outTexCoords = clippedTexCoords
+
+		if len(outVertices) == 0 {
+			return nil, nil
+		}
+	}
+
+	return outVertices, outTexCoords
 }
 
 func linesIntersect(p1, p2, q1, q2 mgl.Vec2) bool {

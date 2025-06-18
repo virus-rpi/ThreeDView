@@ -255,10 +255,25 @@ func (w *ThreeDWidget) render() image.Image {
 	for _, face := range faces {
 		go func(face FaceData) {
 			defer wg2d.Done()
-			clippedPolys := w.camera.ClipAndProjectFace(face.Face, Width, Height)
+
+			var clippedPolys []struct {
+				Points     [3]mgl.Vec2
+				Z          [3]float64
+				TexCoords  [3]mgl.Vec2
+				HasTexture bool
+			}
+
+			if face.HasTexture {
+				// Pass texture coordinates to ClipAndProjectFace if available
+				clippedPolys = w.camera.ClipAndProjectFace(face.Face, Width, Height, face.TexCoords)
+			} else {
+				clippedPolys = w.camera.ClipAndProjectFace(face.Face, Width, Height)
+			}
+
 			if clippedPolys == nil {
 				return
 			}
+
 			for _, tri := range clippedPolys {
 				p1, p2, p3 := tri.Points[0], tri.Points[1], tri.Points[2]
 				z1, z2, z3 := tri.Z[0], tri.Z[1], tri.Z[2]
@@ -274,9 +289,9 @@ func (w *ThreeDWidget) render() image.Image {
 				}
 
 				// Include texture information if available
-				if face.HasTexture {
+				if face.HasTexture && tri.HasTexture {
 					projectedFace.TextureImage = face.TextureImage
-					projectedFace.TexCoords = face.TexCoords
+					projectedFace.TexCoords = tri.TexCoords // Use the interpolated texture coordinates
 					projectedFace.HasTexture = true
 				}
 
