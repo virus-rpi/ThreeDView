@@ -61,8 +61,8 @@ func NewPlane(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color
 		for j := 0; j <= resolution; j++ {
 			vertices = append(vertices, mgl.Vec3{
 				float64(-half + Unit(i)*step),
-				float64(-half + Unit(j)*step),
 				0,
+				float64(-half + Unit(j)*step),
 			})
 		}
 	}

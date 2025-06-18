@@ -317,6 +317,9 @@ func (w *ThreeDWidget) render() image.Image {
 		var logzVals []float64
 		for x := 0; x < int(Width); x++ {
 			for y := 0; y < int(Height); y++ {
+				if len(zBuffer) <= x || len(zBuffer[x]) <= y {
+					continue
+				}
 				z := zBuffer[x][y]
 				if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
 					logzVals = append(logzVals, math.Log(z))
@@ -534,6 +537,9 @@ func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fill color
 					t = float64(x-int(x1)) / float64(x2-x1)
 				}
 				z := z1 + (z2-z1)*t
+				if x >= len(zBuffer) || int(yf) >= len(zBuffer[x]) {
+					continue
+				}
 				if z < zBuffer[x][int(yf)] {
 					zBuffer[x][int(yf)] = z
 					img.Set(x, int(yf), fill)
@@ -554,6 +560,9 @@ func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fill color
 					t = float64(x-int(x1)) / float64(x2-x1)
 				}
 				z := z1 + (z2-z1)*t
+				if x >= len(zBuffer) || int(yf) >= len(zBuffer[x]) {
+					continue
+				}
 				if z < zBuffer[x][int(yf)] {
 					zBuffer[x][int(yf)] = z
 					img.Set(x, int(yf), fill)
@@ -583,6 +592,9 @@ func drawEdge(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64,
 				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / total
 			}
 			z := z1 + (z2-z1)*t
+			if x0 >= len(zBuffer) || y0 >= len(zBuffer[x0]) {
+				return
+			}
 			if z <= zBuffer[x0][y0] {
 				img.Set(x0, y0, c)
 			}

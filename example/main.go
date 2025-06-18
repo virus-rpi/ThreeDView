@@ -44,18 +44,7 @@ func main() {
 		threeDEnv,
 		1)
 
-	cube := object.NewCube(100, mgl.Vec3{
-		0,
-		0,
-		55,
-	},
-		mgl.QuatIdent(),
-		color.RGBA{
-			R: 255,
-			G: 0,
-			B: 255,
-			A: 255,
-		}, threeDEnv)
+	center, _ := object.NewObjectFromObjFile("./stress-boat.obj", mgl.Vec3{0, 100, 0}, mgl.QuatIdent(), 100, color.RGBA{R: 255, B: 255, A: 255}, threeDEnv)
 
 	object.NewOrientationObject(threeDEnv)
 
@@ -67,7 +56,7 @@ func main() {
 	// manualController := camera.NewManualController()
 	// manualController.ShowControlWindow()
 	// envCamera.SetController(manualController)
-	orbitController := camera.NewOrbitController(cube)
+	orbitController := camera.NewOrbitController(center)
 	envCamera.SetController(orbitController)
 	threeDEnv.SetCamera(&envCamera)
 
