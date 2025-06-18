@@ -2,26 +2,24 @@ package object
 
 import (
 	. "ThreeDView/camera"
-	. "ThreeDView/types"
+	"ThreeDView/types"
 	mgl "github.com/go-gl/mathgl/mgl64"
 	"image"
 	"image/color"
 	"sync"
 )
 
-type ThreeDWidgetInterface interface {
-	GetCamera() *Camera
-	RegisterTickMethod(func())
+type threeDWidgetInterface interface {
+	types.ThreeDWidgetInterface
 	AddObject(*Object)
-	GetWidth() Pixel
-	GetHeight() Pixel
+	GetCamera() *Camera
 }
 
 // FaceData represents a face in 3D space
 type FaceData struct {
-	Face         Face        // The Face in 3D space as a Face
+	Face         types.Face  // The Face in 3D space as a Face
 	Color        color.Color // The Color of the Face
-	Distance     Unit        // The Distance of the Face from the camera 3d world space
+	Distance     types.Unit  // The Distance of the Face from the camera 3d world space
 	TextureImage image.Image // The texture image for the face (nil if no texture)
 	TexCoords    [3]mgl.Vec2 // Texture coordinates for each vertex
 	HasTexture   bool        // Whether this face has texture information
@@ -32,7 +30,7 @@ type ProjectedFaceData struct {
 	Face         [3]mgl.Vec2 // The Face in 2D space as 3 2d points
 	Z            [3]float64  // The Z (depth) value for each vertex
 	Color        color.Color // The Color of the Face
-	Distance     Unit        // The Distance of the un-projected Face from the camera in 3d world space
+	Distance     types.Unit  // The Distance of the un-projected Face from the camera in 3d world space
 	TextureImage image.Image // The texture image for the face (nil if no texture)
 	TexCoords    [3]mgl.Vec2 // Texture coordinates for each vertex
 	HasTexture   bool        // Whether this face has texture information
@@ -43,7 +41,7 @@ type Object struct {
 	Faces    []FaceData            // Faces of the Object in local space
 	Rotation mgl.Quat              // Rotation of the Object in world space (now quaternion)
 	Position mgl.Vec3              // Position of the Object in world space
-	Widget   ThreeDWidgetInterface // The Widget the Object is in
+	Widget   threeDWidgetInterface // The Widget the Object is in
 }
 
 // GetFaces returns the faces of the shape in world space as FaceData

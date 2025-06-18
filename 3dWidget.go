@@ -3,6 +3,7 @@ package ThreeDView
 import (
 	. "ThreeDView/camera"
 	. "ThreeDView/object"
+	"ThreeDView/renderer"
 	. "ThreeDView/types"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -14,7 +15,6 @@ import (
 	"log"
 	"math"
 	"sort"
-	"sync"
 	"time"
 )
 
@@ -43,6 +43,7 @@ type ThreeDWidget struct {
 	depthDistanceModulation  float64       // Factor for depth-based modulation of edge threshold
 	grazingAngleMaskPower    float64       // Power factor for grazing angle mask
 	grazingAngleMaskHardness float64       // Hardness factor for grazing angle mask
+	renderer                 *renderer.Renderer
 }
 
 // NewThreeDWidget creates a new 3D widget
@@ -58,13 +59,12 @@ func NewThreeDWidget() *ThreeDWidget {
 		grazingAngleMaskPower:    5.0,
 		grazingAngleMaskHardness: 0.5,
 	}
+	w.renderer = renderer.NewRenderer(w)
 	w.ExtendBaseWidget(w)
 	standardCamera := NewCamera(mgl.Vec3{}, mgl.QuatIdent())
 	w.camera = &standardCamera
 	w.objects = []*Object{}
 	w.image = canvas.NewImageFromImage(w.render())
-	w.fpsCap = math.Inf(1)
-	w.tpsCap = math.Inf(1)
 	go w.renderLoop()
 	go w.tickLoop()
 	return w
@@ -129,6 +129,18 @@ func (w *ThreeDWidget) GetWidth() Pixel {
 
 func (w *ThreeDWidget) GetHeight() Pixel {
 	return Height
+}
+
+func (w *ThreeDWidget) GetBackgroundColor() color.Color { return w.bgColor }
+
+func (w *ThreeDWidget) GetObjects() []*Object { return w.objects }
+
+func (w *ThreeDWidget) GetRenderFaceColors() bool {
+	return w.renderFaceColors
+}
+
+func (w *ThreeDWidget) GetRenderTextures() bool {
+	return w.renderTextures
 }
 
 // SetCamera sets the camera of the 3D widget
@@ -222,6 +234,10 @@ func (w *ThreeDWidget) render() image.Image {
 	img := image.NewRGBA(image.Rect(0, 0, int(Width), int(Height)))
 	draw.Draw(img, img.Bounds(), &image.Uniform{C: w.bgColor}, image.Point{}, draw.Src)
 
+	if len(w.objects) == 0 {
+		return img
+	}
+
 	zBuffer := make([][]float64, int(Width))
 	for i := range zBuffer {
 		zBuffer[i] = make([]float64, Height)
@@ -230,89 +246,7 @@ func (w *ThreeDWidget) render() image.Image {
 		}
 	}
 
-	var faces []FaceData
-	var wg3d sync.WaitGroup
-	var mu3d sync.Mutex
-	wg3d.Add(len(w.objects))
-	for _, object := range w.objects {
-		go func(object *Object) {
-			defer wg3d.Done()
-			for _, face := range object.GetFaces() {
-				if w.camera.FaceOverlapsFrustum(face.Face, Width, Height) {
-					mu3d.Lock()
-					faces = append(faces, face)
-					mu3d.Unlock()
-				}
-			}
-		}(object)
-	}
-	wg3d.Wait()
-
-	var projectedFaces []ProjectedFaceData
-	var wg2d sync.WaitGroup
-	wg2d.Add(len(faces))
-	var mu sync.Mutex
-	for _, face := range faces {
-		go func(face FaceData) {
-			defer wg2d.Done()
-
-			var clippedPolys []struct {
-				Points     [3]mgl.Vec2
-				Z          [3]float64
-				TexCoords  [3]mgl.Vec2
-				HasTexture bool
-			}
-
-			if face.HasTexture {
-				// Pass texture coordinates to ClipAndProjectFace if available
-				clippedPolys = w.camera.ClipAndProjectFace(face.Face, Width, Height, face.TexCoords)
-			} else {
-				clippedPolys = w.camera.ClipAndProjectFace(face.Face, Width, Height)
-			}
-
-			if clippedPolys == nil {
-				return
-			}
-
-			for _, tri := range clippedPolys {
-				p1, p2, p3 := tri.Points[0], tri.Points[1], tri.Points[2]
-				z1, z2, z3 := tri.Z[0], tri.Z[1], tri.Z[2]
-				if !triangleOverlapsScreen(p1, p2, p3, Width, Height) {
-					continue
-				}
-				mu.Lock()
-				projectedFace := ProjectedFaceData{
-					Face:     [3]mgl.Vec2{p1, p2, p3},
-					Z:        [3]float64{z1, z2, z3},
-					Color:    face.Color,
-					Distance: face.Distance,
-				}
-
-				// Include texture information if available
-				if face.HasTexture && tri.HasTexture {
-					projectedFace.TextureImage = face.TextureImage
-					projectedFace.TexCoords = tri.TexCoords // Use the interpolated texture coordinates
-					projectedFace.HasTexture = true
-				}
-
-				projectedFaces = append(projectedFaces, projectedFace)
-				mu.Unlock()
-			}
-		}(face)
-	}
-	wg2d.Wait()
-
-	sort.Slice(projectedFaces, func(i, j int) bool {
-		return projectedFaces[i].Distance > projectedFaces[j].Distance
-	})
-
-	for _, face := range projectedFaces {
-		if w.renderFaceColors {
-			// Use texture if available and texture rendering is enabled
-			useTexture := face.HasTexture && w.renderTextures
-			drawFilledTriangle(img, face.Face, face.Z, face.Color, zBuffer, face.TextureImage, face.TexCoords, useTexture)
-		}
-	}
+	projectedFaces := []ProjectedFaceData{}
 
 	if w.renderFaceOutlines {
 		for _, face := range projectedFaces {
@@ -403,7 +337,7 @@ func (w *ThreeDWidget) render() image.Image {
 		}
 		return debugImg
 	}
-	return img
+	return w.renderer.Render()
 }
 
 func detectZBufferEdges(zBuffer [][]float64, baseThreshold, depthModulation, grazingAnglePower, grazingAngleHardness float64) [][]bool {

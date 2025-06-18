@@ -20,7 +20,6 @@ func main() {
 	MainWindow.CenterOnScreen()
 
 	threeDEnv := ThreeDView.NewThreeDWidget()
-	threeDEnv.Hide()
 	threeDEnv.SetBackgroundColor(color.RGBA{
 		R: 135,
 		G: 206,

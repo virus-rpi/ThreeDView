@@ -65,7 +65,7 @@ func getAverageColorFromTexture(img image.Image, texCoords []mgl.Vec2) color.Col
 
 // NewObjectFromObjFile parses a Wavefront OBJ file at 'path', triangulates all faces
 // If texturePath is provided, it will use the texture to determine face colors
-func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, scale float64, col color.Color, texturePath string, w ThreeDWidgetInterface) (*Object, error) {
+func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, scale float64, col color.Color, texturePath string, w threeDWidgetInterface) (*Object, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open OBJ file: %v", err)
