@@ -29,3 +29,11 @@ func (face *Face) DistanceTo(point mgl.Vec3) Unit {
 	}
 	return totalDistance / Unit(len(face))
 }
+
+// Normal calculates the normal vector of the face
+func (face *Face) Normal() mgl.Vec3 {
+	edge1 := face[1].Sub(face[0])
+	edge2 := face[2].Sub(face[0])
+	normal := edge1.Cross(edge2).Normalize()
+	return normal
+}

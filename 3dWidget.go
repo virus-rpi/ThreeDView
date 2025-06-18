@@ -27,26 +27,36 @@ var (
 // ThreeDWidget is a widget that displays 3D objects
 type ThreeDWidget struct {
 	widget.BaseWidget
-	image              *canvas.Image // The image that is rendered on
-	camera             *Camera       // The camera of the 3D widget
-	objects            []*Object     // The objects in the 3D widget
-	tickMethods        []func()      // The methods that are called every frame
-	bgColor            color.Color   // The background color of the 3D widget
-	renderFaceOutlines bool          // Whether the faces should be rendered with outlines
-	renderFaceColors   bool          // Whether the faces should be rendered with colors
-	renderEdgeOutline  bool          // Whether to render edge outlines using Z-buffer edge detection
-	renderZBufferDebug bool          // If true, render Z-buffer as grayscale overlay
-	fpsCap             float64       // The maximum frames per second the widget should render at
-	tpsCap             float64       // The maximum ticks per second the widget should tick at
+	image                    *canvas.Image // The image that is rendered on
+	camera                   *Camera       // The camera of the 3D widget
+	objects                  []*Object     // The objects in the 3D widget
+	tickMethods              []func()      // The methods that are called every frame
+	bgColor                  color.Color   // The background color of the 3D widget
+	renderFaceOutlines       bool          // Whether the faces should be rendered with outlines
+	renderFaceColors         bool          // Whether the faces should be rendered with colors
+	renderEdgeOutline        bool          // Whether to render edge outlines using Z-buffer edge detection
+	renderZBufferDebug       bool          // If true, render Z-buffer as grayscale overlay
+	fpsCap                   float64       // The maximum frames per second the widget should render at
+	tpsCap                   float64       // The maximum ticks per second the widget should tick at
+	edgeThreshold            float64       // Base threshold for edge detection
+	depthDistanceModulation  float64       // Factor for depth-based modulation of edge threshold
+	grazingAngleMaskPower    float64       // Power factor for grazing angle mask
+	grazingAngleMaskHardness float64       // Hardness factor for grazing angle mask
 }
 
 // NewThreeDWidget creates a new 3D widget
 func NewThreeDWidget() *ThreeDWidget {
-	w := &ThreeDWidget{}
+	w := &ThreeDWidget{
+		bgColor:                  color.Transparent,
+		renderFaceColors:         true,
+		fpsCap:                   math.Inf(1),
+		tpsCap:                   math.Inf(1),
+		edgeThreshold:            0.05,
+		depthDistanceModulation:  0.1,
+		grazingAngleMaskPower:    5.0,
+		grazingAngleMaskHardness: 0.5,
+	}
 	w.ExtendBaseWidget(w)
-	w.bgColor = color.Transparent
-	w.renderFaceOutlines = false
-	w.renderFaceColors = true
 	standardCamera := NewCamera(mgl.Vec3{}, mgl.QuatIdent())
 	w.camera = &standardCamera
 	w.objects = []*Object{}
@@ -63,19 +73,17 @@ func (w *ThreeDWidget) tickLoop() {
 		if w.tpsCap == 0 || !w.Visible() {
 			continue
 		}
-		startTime := time.Now()
-		tickDuration := time.Second / time.Duration(w.tpsCap)
-
-		for _, tickMethod := range w.tickMethods {
-			tickMethod()
+		start := time.Now()
+		tickDur := time.Second / time.Duration(w.tpsCap)
+		for _, tick := range w.tickMethods {
+			tick()
 		}
-
-		elapsedTime := time.Since(startTime)
-		if elapsedTime < tickDuration {
-			time.Sleep(tickDuration - elapsedTime)
+		elapsed := time.Since(start)
+		if elapsed < tickDur {
+			time.Sleep(tickDur - elapsed)
 		}
-		if elapsedTime > tickDuration && tickDuration != 0 {
-			log.Println("WARNING: Tick took too long to execute (", elapsedTime, " > ", tickDuration, ")")
+		if elapsed > tickDur && tickDur != 0 {
+			log.Println("WARNING: Tick took too long (", elapsed, " > ", tickDur, ")")
 		}
 	}
 }
@@ -85,20 +93,16 @@ func (w *ThreeDWidget) renderLoop() {
 		if w.fpsCap == 0 || !w.Visible() {
 			continue
 		}
-		frameStartTime := time.Now()
-		frameDuration := time.Second / time.Duration(w.fpsCap)
-
+		start := time.Now()
+		frameDur := time.Second / time.Duration(w.fpsCap)
 		w.image.Image = w.render()
-		fyne.Do(func() {
-			canvas.Refresh(w.image)
-		})
-
-		frameElapsedTime := time.Since(frameStartTime)
-		if frameElapsedTime < frameDuration {
-			time.Sleep(frameDuration - frameElapsedTime)
+		fyne.Do(func() { canvas.Refresh(w.image) })
+		elapsed := time.Since(start)
+		if elapsed < frameDur {
+			time.Sleep(frameDur - elapsed)
 		}
-		if frameElapsedTime > frameDuration && frameDuration != 0 {
-			log.Println("WARNING: Frame took too long to render (", frameElapsedTime, " > ", frameDuration, ")")
+		if elapsed > frameDur && frameDur != 0 {
+			log.Println("WARNING: Frame took too long (", elapsed, " > ", frameDur, ")")
 		}
 	}
 }
@@ -176,6 +180,30 @@ func (w *ThreeDWidget) SetRenderZBufferDebug(newVal bool) {
 	w.renderZBufferDebug = newVal
 }
 
+// SetEdgeThreshold sets the base threshold for edge detection.
+// Higher values result in fewer edges being detected.
+func (w *ThreeDWidget) SetEdgeThreshold(threshold float64) {
+	w.edgeThreshold = threshold
+}
+
+// SetDepthDistanceModulation sets the factor for depth-based modulation of edge threshold.
+// Higher values increase the threshold for distant objects, reducing edge detection in the distance.
+func (w *ThreeDWidget) SetDepthDistanceModulation(factor float64) {
+	w.depthDistanceModulation = factor
+}
+
+// SetGrazingAngleMaskPower sets the power factor for grazing angle mask.
+// Higher values make edges at grazing angles more pronounced.
+func (w *ThreeDWidget) SetGrazingAngleMaskPower(power float64) {
+	w.grazingAngleMaskPower = power
+}
+
+// SetGrazingAngleMaskHardness sets the hardness factor for grazing angle mask.
+// Higher values make the transition between masked and unmasked edges sharper.
+func (w *ThreeDWidget) SetGrazingAngleMaskHardness(hardness float64) {
+	w.grazingAngleMaskHardness = hardness
+}
+
 func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 	return &threeDRenderer{image: w.image}
 }
@@ -188,7 +216,7 @@ func (w *ThreeDWidget) render() image.Image {
 	for i := range zBuffer {
 		zBuffer[i] = make([]float64, Height)
 		for j := range zBuffer[i] {
-			zBuffer[i][j] = math.Inf(1) // Initialize to the farthest possible
+			zBuffer[i][j] = math.Inf(1)
 		}
 	}
 
@@ -199,14 +227,13 @@ func (w *ThreeDWidget) render() image.Image {
 	for _, object := range w.objects {
 		go func(object *Object) {
 			defer wg3d.Done()
-			objectFaces := object.GetFaces()
-			mu3d.Lock()
-			for _, face := range objectFaces {
+			for _, face := range object.GetFaces() {
 				if w.camera.FaceOverlapsFrustum(face.Face, Width, Height) {
+					mu3d.Lock()
 					faces = append(faces, face)
+					mu3d.Unlock()
 				}
 			}
-			mu3d.Unlock()
 		}(object)
 	}
 	wg3d.Wait()
@@ -266,7 +293,7 @@ func (w *ThreeDWidget) render() image.Image {
 	}
 
 	if w.renderEdgeOutline {
-		edgeMask := detectZBufferEdges(zBuffer, 0.05) // threshold can be tuned
+		edgeMask := detectZBufferEdges(zBuffer, w.edgeThreshold, w.depthDistanceModulation, w.grazingAngleMaskPower, w.grazingAngleMaskHardness)
 		thickness := 2
 		outlineColor := color.Black
 		for x := 0; x < int(Width); x++ {
@@ -287,7 +314,6 @@ func (w *ThreeDWidget) render() image.Image {
 
 	if w.renderZBufferDebug {
 		debugImg := image.NewGray(img.Bounds())
-		var minZ, maxZ = math.Inf(1), math.Inf(-1)
 		var logzVals []float64
 		for x := 0; x < int(Width); x++ {
 			for y := 0; y < int(Height); y++ {
@@ -307,38 +333,28 @@ func (w *ThreeDWidget) render() image.Image {
 			lowIdx = 0
 			highIdx = len(logzVals) - 1
 		}
-		minZ = logzVals[lowIdx]
-		maxZ = logzVals[highIdx]
+		minZ, maxZ := logzVals[lowIdx], logzVals[highIdx]
 		if minZ == maxZ {
-			minZ = logzVals[0]
-			maxZ = logzVals[len(logzVals)-1]
-			if minZ == maxZ {
-				minZ = 0
-				maxZ = 1
-			}
+			minZ, maxZ = 0, 1
 		}
 		var edgeMask [][]bool
 		if w.renderEdgeOutline {
-			edgeMask = detectZBufferEdges(zBuffer, 0.05)
+			edgeMask = detectZBufferEdges(zBuffer, w.edgeThreshold, w.depthDistanceModulation, w.grazingAngleMaskPower, w.grazingAngleMaskHardness)
 		}
 		for x := 0; x < int(Width); x++ {
 			for y := 0; y < int(Height); y++ {
 				z := zBuffer[x][y]
-				var gray uint8
-				if math.IsInf(z, 1) || z <= 0 {
-					gray = 255
-				} else if math.IsInf(z, -1) {
-					gray = 0
-				} else {
+				var gray uint8 = 255
+				if !math.IsInf(z, 1) && z > 0 {
 					logz := math.Log(z)
-					normalizedZ := (logz - minZ) / (maxZ - minZ)
-					if normalizedZ < 0 {
-						normalizedZ = 0
+					norm := (logz - minZ) / (maxZ - minZ)
+					if norm < 0 {
+						norm = 0
 					}
-					if normalizedZ > 1 {
-						normalizedZ = 1
+					if norm > 1 {
+						norm = 1
 					}
-					gray = uint8(normalizedZ * 255)
+					gray = uint8(norm * 255)
 				}
 				if w.renderEdgeOutline && edgeMask != nil && edgeMask[x][y] {
 					gray = 0
@@ -348,20 +364,15 @@ func (w *ThreeDWidget) render() image.Image {
 		}
 		return debugImg
 	}
-
 	return img
 }
 
-// detectZBufferEdges applies a Sobel operator to the Z-buffer and returns a mask of edge pixels
-func detectZBufferEdges(zBuffer [][]float64, threshold float64) [][]bool {
-	w := len(zBuffer)
-	h := len(zBuffer[0])
+func detectZBufferEdges(zBuffer [][]float64, baseThreshold, depthModulation, grazingAnglePower, grazingAngleHardness float64) [][]bool {
+	w, h := len(zBuffer), len(zBuffer[0])
 	mask := make([][]bool, w)
 	for i := range mask {
 		mask[i] = make([]bool, h)
 	}
-
-	// Collect all valid log(z) values for percentile normalization
 	var logzVals []float64
 	for x := 0; x < w; x++ {
 		for y := 0; y < h; y++ {
@@ -381,44 +392,24 @@ func detectZBufferEdges(zBuffer [][]float64, threshold float64) [][]bool {
 		lowIdx = 0
 		highIdx = len(logzVals) - 1
 	}
-	minZ := logzVals[lowIdx]
-	maxZ := logzVals[highIdx]
+	minZ, maxZ := logzVals[lowIdx], logzVals[highIdx]
 	if minZ == maxZ {
-		minZ = logzVals[0]
-		maxZ = logzVals[len(logzVals)-1]
-		if minZ == maxZ {
-			minZ = 0
-			maxZ = 1
-		}
+		minZ, maxZ = 0, 1
 	}
-
-	// Normalize Z-buffer to [0,1] using log(z), replace inf or non-positive with maxZ
 	normZ := make([][]float64, w)
 	for x := 0; x < w; x++ {
 		normZ[x] = make([]float64, h)
 		for y := 0; y < h; y++ {
 			z := zBuffer[x][y]
-			var logz float64
-			if math.IsInf(z, 1) || math.IsInf(z, -1) || z <= 0 {
-				logz = maxZ
-			} else {
+			logz := maxZ
+			if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
 				logz = math.Log(z)
 			}
 			normZ[x][y] = (logz - minZ) / (maxZ - minZ)
 		}
 	}
-
-	// Sobel kernels
-	gx := [3][3]float64{
-		{-1, 0, 1},
-		{-2, 0, 2},
-		{-1, 0, 1},
-	}
-	gy := [3][3]float64{
-		{-1, -2, -1},
-		{0, 0, 0},
-		{1, 2, 1},
-	}
+	gx := [3][3]float64{{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}}
+	gy := [3][3]float64{{-1, -2, -1}, {0, 0, 0}, {1, 2, 1}}
 	for x := 1; x < w-1; x++ {
 		for y := 1; y < h-1; y++ {
 			var sx, sy float64
@@ -429,8 +420,29 @@ func detectZBufferEdges(zBuffer [][]float64, threshold float64) [][]bool {
 					sy += gy[i+1][j+1] * z
 				}
 			}
-			mag := math.Sqrt(sx*sx + sy*sy)
-			if mag > threshold {
+
+			z := zBuffer[x][y]
+			threshold := baseThreshold
+			if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
+				threshold *= 1.0 + depthModulation*z
+			}
+
+			gradientMagnitude := math.Hypot(sx, sy)
+			if gradientMagnitude > 0.001 {
+				nx, ny := -sx/gradientMagnitude, -sy/gradientMagnitude
+
+				nz := math.Sqrt(1.0 - nx*nx - ny*ny)
+				if math.IsNaN(nz) {
+					nz = 0.0
+				}
+				dotProduct := nz
+
+				fresnel := math.Pow(1.0-math.Max(0.0, math.Min(1.0, dotProduct)), grazingAnglePower)
+				grazingAngleMask := math.Max(0.0, math.Min(1.0, (fresnel+grazingAngleHardness-1.0)/grazingAngleHardness))
+				threshold *= 1.0 / (1.0 + grazingAngleMask)
+			}
+
+			if gradientMagnitude > threshold {
 				mask[x][y] = true
 			}
 		}
@@ -443,22 +455,18 @@ func (w *ThreeDWidget) Dragged(event *fyne.DragEvent) {
 		controller.OnDrag(event.Dragged.DX, event.Dragged.DY)
 	}
 }
-
 func (w *ThreeDWidget) DragEnd() {
 	if controller, ok := w.camera.Controller.(DragController); ok {
 		controller.OnDragEnd()
 	}
 }
-
 func (w *ThreeDWidget) Scrolled(event *fyne.ScrollEvent) {
 	if controller, ok := w.camera.Controller.(ScrollController); ok {
 		controller.OnScroll(event.Scrolled.DX, event.Scrolled.DY)
 	}
 }
 
-type threeDRenderer struct {
-	image *canvas.Image
-}
+type threeDRenderer struct{ image *canvas.Image }
 
 // Layout resizes the widget to the given size
 func (r *threeDRenderer) Layout(size fyne.Size) {
@@ -492,13 +500,11 @@ func triangleOverlapsScreen(p1, p2, p3 mgl.Vec2, width, height Pixel) bool {
 	return maxX >= 0 && minX < int(width) && maxY >= 0 && minY < int(height)
 }
 
-func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor color.Color, zBuffer [][]float64) {
+func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fill color.Color, zBuffer [][]float64) {
 	v := [3]struct {
 		p mgl.Vec2
 		z float64
-	}{
-		{p[0], z[0]}, {p[1], z[1]}, {p[2], z[2]},
-	}
+	}{{p[0], z[0]}, {p[1], z[1]}, {p[2], z[2]}}
 	if v[1].p.Y() < v[0].p.Y() {
 		v[0], v[1] = v[1], v[0]
 	}
@@ -508,7 +514,6 @@ func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor 
 	if v[2].p.Y() < v[1].p.Y() {
 		v[1], v[2] = v[2], v[1]
 	}
-
 	interpolate := func(y, y1, y2, x1, x2, z1, z2 float64) (Pixel, float64) {
 		if y1 == y2 {
 			return Pixel(x1), z1
@@ -516,7 +521,6 @@ func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor 
 		t := (y - y1) / (y2 - y1)
 		return Pixel(x1 + (x2-x1)*t), z1 + (z2-z1)*t
 	}
-
 	for yf := math.Ceil(v[0].p.Y()); yf <= v[1].p.Y(); yf++ {
 		x1, z1 := interpolate(yf, v[0].p.Y(), v[1].p.Y(), v[0].p.X(), v[1].p.X(), v[0].z, v[1].z)
 		x2, z2 := interpolate(yf, v[0].p.Y(), v[2].p.Y(), v[0].p.X(), v[2].p.X(), v[0].z, v[2].z)
@@ -532,7 +536,7 @@ func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor 
 				z := z1 + (z2-z1)*t
 				if z < zBuffer[x][int(yf)] {
 					zBuffer[x][int(yf)] = z
-					img.Set(x, int(yf), fillColor)
+					img.Set(x, int(yf), fill)
 				}
 			}
 		}
@@ -552,43 +556,35 @@ func drawFilledTriangle(img *image.RGBA, p [3]mgl.Vec2, z [3]float64, fillColor 
 				z := z1 + (z2-z1)*t
 				if z < zBuffer[x][int(yf)] {
 					zBuffer[x][int(yf)] = z
-					img.Set(x, int(yf), fillColor)
+					img.Set(x, int(yf), fill)
 				}
 			}
 		}
 	}
 }
 
-func drawEdge(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, color color.Color, zBuffer [][]float64) {
-	x0 := int(math.Round(p1.X()))
-	y0 := int(math.Round(p1.Y()))
-	x1 := int(math.Round(p2.X()))
-	y1 := int(math.Round(p2.Y()))
-	dx := int(math.Abs(float64(x1 - x0)))
-	dy := int(math.Abs(float64(y1 - y0)))
-	sx := -1
-	if x0 < x1 {
-		sx = 1
+func drawEdge(img *image.RGBA, p1 mgl.Vec2, z1 float64, p2 mgl.Vec2, z2 float64, c color.Color, zBuffer [][]float64) {
+	x0, y0 := int(math.Round(p1.X())), int(math.Round(p1.Y()))
+	x1, y1 := int(math.Round(p2.X())), int(math.Round(p2.Y()))
+	dx, dy := int(math.Abs(float64(x1-x0))), int(math.Abs(float64(y1-y0)))
+	sx, sy := 1, 1
+	if x0 > x1 {
+		sx = -1
 	}
-	sy := -1
-	if y0 < y1 {
-		sy = 1
+	if y0 > y1 {
+		sy = -1
 	}
-	err := dx - dy
-	maxIter := dx + dy + 10
-	iter := 0
+	err, maxIter, iter := dx-dy, dx+dy+10, 0
 	for {
 		if x0 >= 0 && x0 < int(Width) && y0 >= 0 && y0 < int(Height) {
-			var t float64
-			totalDist := math.Hypot(float64(x1-x0), float64(y1-y0))
-			if totalDist != 0 {
-				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / totalDist
-			} else {
-				t = 0
+			t := 0.0
+			total := math.Hypot(float64(x1-x0), float64(y1-y0))
+			if total != 0 {
+				t = math.Hypot(float64(x0-int(math.Round(p1.X()))), float64(y0-int(math.Round(p1.Y())))) / total
 			}
 			z := z1 + (z2-z1)*t
 			if z <= zBuffer[x0][y0] {
-				img.Set(x0, y0, color)
+				img.Set(x0, y0, c)
 			}
 		}
 		if x0 == x1 && y0 == y1 {
