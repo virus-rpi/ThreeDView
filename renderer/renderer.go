@@ -35,8 +35,8 @@ func NewRenderer(widget threeDWidgetInterface) *Renderer {
 		widget:        widget,
 		img:           nil,
 		zBuffer:       nil,
-		renderWorkers: make([]*renderWorker, 20000),
-		workerChannel: make(chan *instruction),
+		renderWorkers: make([]*renderWorker, runtime.NumCPU()),
+		workerChannel: make(chan *instruction, 1000),
 	}
 
 	for i := range renderer.renderWorkers {
@@ -64,7 +64,7 @@ func (r *Renderer) resetZBuffer() {
 }
 
 func (r *Renderer) getFacesInFrustum() chan interface{} {
-	callbackChannel := make(chan interface{})
+	callbackChannel := make(chan interface{}, 10000)
 	wg := sync.WaitGroup{}
 	wg.Add(len(r.widget.GetObjects()))
 	go func() {
@@ -80,7 +80,7 @@ func (r *Renderer) getFacesInFrustum() chan interface{} {
 }
 
 func (r *Renderer) clipAndProjectFaces() []ProjectedFaceData {
-	callbackChannel := make(chan interface{})
+	callbackChannel := make(chan interface{}, 10000)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
@@ -214,14 +214,15 @@ func (r *Renderer) Render() image.Image {
 		return r.img
 	}
 	r.resetZBuffer()
-	startTime := time.Now()
+	startTime1 := time.Now()
 	faces := r.clipAndProjectFaces()
-	log.Println("Projection and clipping took", time.Since(startTime))
-	startTime = time.Now()
+	log.Println("Projection and clipping took", time.Since(startTime1))
+	startTime2 := time.Now()
 	r.renderColors(faces)
 	r.renderFaceOutlines(faces)
 	r.renderZBuffer()
 	r.renderEdgeOutlines()
-	log.Println("Rendering took", time.Since(startTime))
+	log.Println("Rendering took", time.Since(startTime2))
+	log.Println("FPS:", int(1.0/time.Since(startTime1).Seconds()))
 	return r.img
 }
