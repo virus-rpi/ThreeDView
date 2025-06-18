@@ -166,6 +166,13 @@ func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, sca
 
 				faceColor := col
 
+				// Create face data
+				faceData := FaceData{
+					Face:  [3]mgl.Vec3{v1, v2, v3},
+					Color: faceColor,
+				}
+
+				// Handle texture if available
 				if textureImg != nil && len(texCoordIndices) >= 3 {
 					var triangleTexCoords []mgl.Vec2
 					if idx1 < len(texCoordIndices) {
@@ -179,14 +186,23 @@ func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, sca
 					}
 
 					if len(triangleTexCoords) > 0 {
-						faceColor = getAverageColorFromTexture(textureImg, triangleTexCoords)
+						// Set the average color from texture
+						faceData.Color = getAverageColorFromTexture(textureImg, triangleTexCoords)
+
+						// If we have exactly 3 texture coordinates, store them for texture mapping
+						if len(triangleTexCoords) == 3 {
+							faceData.TextureImage = textureImg
+							faceData.TexCoords = [3]mgl.Vec2{
+								triangleTexCoords[0],
+								triangleTexCoords[1],
+								triangleTexCoords[2],
+							}
+							faceData.HasTexture = true
+						}
 					}
 				}
 
-				facesData = append(facesData, FaceData{
-					Face:  [3]mgl.Vec3{v1, v2, v3},
-					Color: faceColor,
-				})
+				facesData = append(facesData, faceData)
 			}
 		}
 	}

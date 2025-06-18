@@ -4,6 +4,7 @@ import (
 	. "ThreeDView/camera"
 	. "ThreeDView/types"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"image"
 	"image/color"
 	"sync"
 )
@@ -18,17 +19,23 @@ type ThreeDWidgetInterface interface {
 
 // FaceData represents a face in 3D space
 type FaceData struct {
-	Face     Face        // The Face in 3D space as a Face
-	Color    color.Color // The Color of the Face
-	Distance Unit        // The Distance of the Face from the camera 3d world space
+	Face         Face        // The Face in 3D space as a Face
+	Color        color.Color // The Color of the Face
+	Distance     Unit        // The Distance of the Face from the camera 3d world space
+	TextureImage image.Image // The texture image for the face (nil if no texture)
+	TexCoords    [3]mgl.Vec2 // Texture coordinates for each vertex
+	HasTexture   bool        // Whether this face has texture information
 }
 
 // ProjectedFaceData represents a face projected to 2D space
 type ProjectedFaceData struct {
-	Face     [3]mgl.Vec2 // The Face in 2D space as 3 2d points
-	Z        [3]float64  // The Z (depth) value for each vertex
-	Color    color.Color // The Color of the Face
-	Distance Unit        // The Distance of the un-projected Face from the camera in 3d world space
+	Face         [3]mgl.Vec2 // The Face in 2D space as 3 2d points
+	Z            [3]float64  // The Z (depth) value for each vertex
+	Color        color.Color // The Color of the Face
+	Distance     Unit        // The Distance of the un-projected Face from the camera in 3d world space
+	TextureImage image.Image // The texture image for the face (nil if no texture)
+	TexCoords    [3]mgl.Vec2 // Texture coordinates for each vertex
+	HasTexture   bool        // Whether this face has texture information
 }
 
 // Object represents a 3D shape in world space
@@ -52,6 +59,12 @@ func (object *Object) GetFaces() []FaceData {
 			clonedFace.Face.Rotate(mgl.Vec3{}, object.Rotation)
 			clonedFace.Face.Add(object.Position)
 			clonedFace.Distance = clonedFace.Face.DistanceTo(object.Widget.GetCamera().Position)
+
+			// Preserve texture information
+			clonedFace.TextureImage = face.TextureImage
+			clonedFace.TexCoords = face.TexCoords
+			clonedFace.HasTexture = face.HasTexture
+
 			faces[i] = clonedFace
 		}(i, face)
 	}

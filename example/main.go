@@ -84,12 +84,18 @@ func main() {
 	})
 	faceColorCheck.SetChecked(true)
 
+	textureCheck := widget.NewCheck("Use Textures", func(checked bool) {
+		threeDEnv.SetRenderTextures(checked)
+	})
+	textureCheck.SetChecked(true)
+
 	controls := container.New(
 		layout.NewVBoxLayout(),
 		zBufferCheck,
 		edgeCheck,
 		faceOutlineCheck,
 		faceColorCheck,
+		textureCheck,
 	)
 	controlWindow.SetContent(controls)
 	controlWindow.Show()
