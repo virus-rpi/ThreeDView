@@ -34,6 +34,8 @@ type ThreeDWidget struct {
 	bgColor            color.Color   // The background color of the 3D widget
 	renderFaceOutlines bool          // Whether the faces should be rendered with outlines
 	renderFaceColors   bool          // Whether the faces should be rendered with colors
+	renderEdgeOutline  bool          // Whether to render edge outlines using Z-buffer edge detection
+	renderZBufferDebug bool          // If true, render Z-buffer as grayscale overlay
 	fpsCap             float64       // The maximum frames per second the widget should render at
 	tpsCap             float64       // The maximum ticks per second the widget should tick at
 }
@@ -163,6 +165,17 @@ func (w *ThreeDWidget) SetRenderFaceColors(newVal bool) {
 	w.renderFaceColors = newVal
 }
 
+// SetRenderEdgeOutline sets whether to render edge outlines using Z-buffer edge detection.
+// If true, edges will be detected using the Z-buffer and rendered with a black outline.
+func (w *ThreeDWidget) SetRenderEdgeOutline(newVal bool) {
+	w.renderEdgeOutline = newVal
+}
+
+// SetRenderZBufferDebug sets whether to render the Z-buffer as a grayscale debug overlay.
+func (w *ThreeDWidget) SetRenderZBufferDebug(newVal bool) {
+	w.renderZBufferDebug = newVal
+}
+
 func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 	return &threeDRenderer{image: w.image}
 }
@@ -252,7 +265,165 @@ func (w *ThreeDWidget) render() image.Image {
 		}
 	}
 
+	if w.renderEdgeOutline {
+		edgeMask := detectZBufferEdges(zBuffer, 0.001) // threshold can be tuned
+		thickness := 2
+		outlineColor := color.Black
+		for x := 0; x < int(Width); x++ {
+			for y := 0; y < int(Height); y++ {
+				if edgeMask[x][y] {
+					for dx := -thickness; dx <= thickness; dx++ {
+						for dy := -thickness; dy <= thickness; dy++ {
+							nx, ny := x+dx, y+dy
+							if nx >= 0 && nx < int(Width) && ny >= 0 && ny < int(Height) {
+								img.Set(nx, ny, outlineColor)
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// If both edge outline and Z-buffer debug are enabled, blend the edge mask over the Z-buffer debug image
+	if w.renderZBufferDebug {
+		debugImg := image.NewGray(img.Bounds())
+		var minZ, maxZ = math.Inf(1), math.Inf(-1)
+		var logzVals []float64
+		for x := 0; x < int(Width); x++ {
+			for y := 0; y < int(Height); y++ {
+				z := zBuffer[x][y]
+				if !math.IsInf(z, 1) && !math.IsInf(z, -1) && z > 0 {
+					logzVals = append(logzVals, math.Log(z))
+				}
+			}
+		}
+		if len(logzVals) == 0 {
+			return debugImg
+		}
+		sort.Float64s(logzVals)
+		lowIdx := int(0.02 * float64(len(logzVals)))
+		highIdx := int(0.98 * float64(len(logzVals)))
+		if highIdx <= lowIdx {
+			lowIdx = 0
+			highIdx = len(logzVals) - 1
+		}
+		minZ = logzVals[lowIdx]
+		maxZ = logzVals[highIdx]
+		if minZ == maxZ {
+			minZ = logzVals[0]
+			maxZ = logzVals[len(logzVals)-1]
+			if minZ == maxZ {
+				minZ = 0
+				maxZ = 1
+			}
+		}
+		// Compute edge mask if needed
+		var edgeMask [][]bool
+		if w.renderEdgeOutline {
+			edgeMask = detectZBufferEdges(zBuffer, 0.05)
+		}
+		for x := 0; x < int(Width); x++ {
+			for y := 0; y < int(Height); y++ {
+				z := zBuffer[x][y]
+				var gray uint8
+				if math.IsInf(z, 1) || z <= 0 {
+					gray = 255
+				} else if math.IsInf(z, -1) {
+					gray = 0
+				} else {
+					logz := math.Log(z)
+					normalizedZ := (logz - minZ) / (maxZ - minZ)
+					if normalizedZ < 0 {
+						normalizedZ = 0
+					}
+					if normalizedZ > 1 {
+						normalizedZ = 1
+					}
+					gray = uint8(normalizedZ * 255)
+				}
+				if w.renderEdgeOutline && edgeMask != nil && edgeMask[x][y] {
+					gray = 0 // Draw edge as black
+				}
+				debugImg.SetGray(x, y, color.Gray{Y: gray})
+			}
+		}
+		return debugImg
+	}
+
 	return img
+}
+
+// detectZBufferEdges applies a Sobel operator to the Z-buffer and returns a mask of edge pixels
+func detectZBufferEdges(zBuffer [][]float64, threshold float64) [][]bool {
+	w := len(zBuffer)
+	h := len(zBuffer[0])
+	mask := make([][]bool, w)
+	for i := range mask {
+		mask[i] = make([]bool, h)
+	}
+
+	// Find min and max finite Z values for normalization
+	minZ, maxZ := math.Inf(1), math.Inf(-1)
+	for x := 0; x < w; x++ {
+		for y := 0; y < h; y++ {
+			z := zBuffer[x][y]
+			if !math.IsInf(z, 1) && !math.IsInf(z, -1) {
+				if z < minZ {
+					minZ = z
+				}
+				if z > maxZ {
+					maxZ = z
+				}
+			}
+		}
+	}
+	if minZ == maxZ {
+		minZ = 0
+		maxZ = 1
+	}
+
+	// Normalize Z-buffer to [0,1], replace inf with maxZ
+	normZ := make([][]float64, w)
+	for x := 0; x < w; x++ {
+		normZ[x] = make([]float64, h)
+		for y := 0; y < h; y++ {
+			z := zBuffer[x][y]
+			if math.IsInf(z, 1) || math.IsInf(z, -1) {
+				z = maxZ
+			}
+			normZ[x][y] = (z - minZ) / (maxZ - minZ)
+		}
+	}
+
+	// Sobel kernels
+	gx := [3][3]float64{
+		{-1, 0, 1},
+		{-2, 0, 2},
+		{-1, 0, 1},
+	}
+	gy := [3][3]float64{
+		{-1, -2, -1},
+		{0, 0, 0},
+		{1, 2, 1},
+	}
+	for x := 1; x < w-1; x++ {
+		for y := 1; y < h-1; y++ {
+			var sx, sy float64
+			for i := -1; i <= 1; i++ {
+				for j := -1; j <= 1; j++ {
+					z := normZ[x+i][y+j]
+					sx += gx[i+1][j+1] * z
+					sy += gy[i+1][j+1] * z
+				}
+			}
+			mag := math.Sqrt(sx*sx + sy*sy)
+			if mag > threshold {
+				mask[x][y] = true
+			}
+		}
+	}
+	return mask
 }
 
 func (w *ThreeDWidget) Dragged(event *fyne.DragEvent) {

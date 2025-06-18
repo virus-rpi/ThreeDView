@@ -6,6 +6,9 @@ import (
 	"ThreeDView/object"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/widget"
 	mgl "github.com/go-gl/mathgl/mgl64"
 	"image/color"
 )
@@ -69,6 +72,38 @@ func main() {
 	threeDEnv.SetCamera(&envCamera)
 
 	MainWindow.SetContent(threeDEnv)
+
+	controlWindow := App.NewWindow("3D Debug Controls")
+	controlWindow.Resize(fyne.NewSize(300, 200))
+
+	zBufferCheck := widget.NewCheck("Show Z Buffer Debug", func(checked bool) {
+		threeDEnv.SetRenderZBufferDebug(checked)
+	})
+
+	edgeCheck := widget.NewCheck("Show Edge Outline", func(checked bool) {
+		threeDEnv.SetRenderEdgeOutline(checked)
+	})
+	edgeCheck.SetChecked(false)
+
+	faceOutlineCheck := widget.NewCheck("Show Face Outlines", func(checked bool) {
+		threeDEnv.SetRenderFaceOutlines(checked)
+	})
+	faceOutlineCheck.SetChecked(false)
+
+	faceColorCheck := widget.NewCheck("Show Face Colors", func(checked bool) {
+		threeDEnv.SetRenderFaceColors(checked)
+	})
+	faceColorCheck.SetChecked(true)
+
+	controls := container.New(
+		layout.NewVBoxLayout(),
+		zBufferCheck,
+		edgeCheck,
+		faceOutlineCheck,
+		faceColorCheck,
+	)
+	controlWindow.SetContent(controls)
+	controlWindow.Show()
 
 	MainWindow.ShowAndRun()
 }
