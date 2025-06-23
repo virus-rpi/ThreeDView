@@ -7,6 +7,7 @@ import (
 
 type ObjectInterface interface {
 	Faces() []FaceData
+	StreamFaces() <-chan FaceData
 	Position() mgl.Vec3
 	Rotation() mgl.Quat
 	Widget() ThreeDWidgetInterface

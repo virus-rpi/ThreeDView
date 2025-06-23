@@ -439,8 +439,7 @@ func (camera *Camera) BuildOctree() {
 	for _, obj := range objects {
 		go func(obj ObjectInterface) {
 			defer wg.Done()
-			faces := obj.Faces()
-			for _, face := range faces {
+			for face := range obj.StreamFaces() {
 				camera.octree.insert(face)
 			}
 		}(obj)

@@ -59,28 +59,53 @@ func (object *Object) SetWidget(widget types.ThreeDWidgetInterface) {
 	object.widget.GetCamera().RebuildOctree()
 }
 
-// Faces returns the faces of the shape in world space as FaceData
+func (object *Object) transformFace(face types.FaceData) types.FaceData {
+	clonedFace := face
+	clonedFace.Face = face.Face
+	clonedFace.Rotate(mgl.Vec3{}, object.rotation)
+	clonedFace.Add(object.position)
+	clonedFace.Distance = clonedFace.DistanceTo(object.widget.GetCamera().Position())
+
+	clonedFace.TextureImage = face.TextureImage
+	clonedFace.TexCoords = face.TexCoords
+	clonedFace.HasTexture = face.HasTexture
+
+	return clonedFace
+}
+
 func (object *Object) Faces() []types.FaceData {
 	faces := make([]types.FaceData, len(object.faces))
 	var wg sync.WaitGroup
 	wg.Add(len(object.faces))
+
 	for i, face := range object.faces {
 		go func(i int, face types.FaceData) {
 			defer wg.Done()
-			clonedFace := face
-			clonedFace.Face = face.Face
-			clonedFace.Rotate(mgl.Vec3{}, object.rotation)
-			clonedFace.Add(object.position)
-			clonedFace.Distance = clonedFace.DistanceTo(object.widget.GetCamera().Position())
-
-			// Preserve texture information
-			clonedFace.TextureImage = face.TextureImage
-			clonedFace.TexCoords = face.TexCoords
-			clonedFace.HasTexture = face.HasTexture
-
-			faces[i] = clonedFace
+			faces[i] = object.transformFace(face)
 		}(i, face)
 	}
+
 	wg.Wait()
 	return faces
+}
+
+func (object *Object) StreamFaces() <-chan types.FaceData {
+	out := make(chan types.FaceData, 1000)
+
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(len(object.faces))
+
+		for _, face := range object.faces {
+			go func(face types.FaceData) {
+				defer wg.Done()
+				out <- object.transformFace(face)
+			}(face)
+		}
+
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
 }
