@@ -7,6 +7,13 @@ import (
 	"math"
 )
 
+type ClippedTriangle struct {
+	Points     [3]mgl.Vec2
+	Z          [3]float64
+	TexCoords  [3]mgl.Vec2
+	HasTexture bool
+}
+
 // FaceData represents a face in 3D space
 type FaceData struct {
 	Face         [3]mgl.Vec3 // The Face in 3D space as a list of vectors

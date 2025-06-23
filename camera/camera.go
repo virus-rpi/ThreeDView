@@ -9,6 +9,14 @@ import (
 	"sync"
 )
 
+var (
+	vec4Pool     = sync.Pool{New: func() any { return make([]mgl.Vec4, 0, 16) }}
+	vec2Pool     = sync.Pool{New: func() any { return make([]mgl.Vec2, 0, 16) }}
+	float64Pool  = sync.Pool{New: func() any { return make([]float64, 0, 64) }}
+	trianglePool = sync.Pool{New: func() any { return make([]ClippedTriangle, 0, 8) }}
+	indexPool    = sync.Pool{New: func() any { return make([]uint32, 0, 32) }}
+)
+
 // Camera represents a camera in 3D space
 type Camera struct {
 	position   mgl.Vec3   // Camera position in world space in units
@@ -194,56 +202,45 @@ func (camera *Camera) UnProject(point2d mgl.Vec2, distance Unit) mgl.Vec3 {
 
 // ClipAndProjectFace clips a polygon (in world space) to the camera frustum and returns the resulting polygon(s) in screen space
 // If texCoords is provided, texture coordinates will be interpolated for the clipped polygon
-func (camera *Camera) ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2) []struct {
-	Points     [3]mgl.Vec2
-	Z          [3]float64
-	TexCoords  [3]mgl.Vec2
-	HasTexture bool
-} {
+func (camera *Camera) ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2) []ClippedTriangle {
 	camera.cacheMutex.RLock()
 	mvp := camera.mvpCache
 	camera.cacheMutex.RUnlock()
 	width, height := camera.widget.GetWidth(), camera.widget.GetHeight()
 
-	vertices := make([]mgl.Vec4, 3)
+	vertices := vec4Pool.Get().([]mgl.Vec4)[:0]
 	for i := 0; i < 3; i++ {
 		v := face.Face[i]
-		v4 := mgl.Vec4{v.X(), v.Y(), v.Z(), 1}
-		vertices[i] = mvp.Mul4x1(v4)
+		vertices = append(vertices, mvp.Mul4x1(mgl.Vec4{v.X(), v.Y(), v.Z(), 1}))
 	}
 
-	// Check if texture coordinates are provided
 	hasTexture := len(texCoords) > 0
-	var texCoordsArray [3]mgl.Vec2
+	texCoordsArray := [3]mgl.Vec2{}
 	if hasTexture {
 		texCoordsArray = texCoords[0]
 	}
 
-	// Create a map to track original vertex indices and their texture coordinates
-	vertexToTexCoord := make(map[int]mgl.Vec2)
-	for i := 0; i < 3; i++ {
-		if hasTexture {
-			vertexToTexCoord[i] = texCoordsArray[i]
-		}
+	vertexToTexCoord := map[int]mgl.Vec2{}
+	for i := 0; i < 3 && hasTexture; i++ {
+		vertexToTexCoord[i] = texCoordsArray[i]
 	}
 
-	// Clip the polygon in homogeneous space
 	var clippedVertices []mgl.Vec4
 	var clippedTexCoords []mgl.Vec2
-
 	if hasTexture {
-		clippedVertices, clippedTexCoords = clipPolygonHomogeneousWithTexCoords(vertices, vertexToTexCoord, hasTexture)
+		clippedVertices, clippedTexCoords = clipPolygonHomogeneousWithTexCoords(vertices, vertexToTexCoord, true)
 	} else {
 		clippedVertices = clipPolygonHomogeneous(vertices)
 	}
 
+	vec4Pool.Put(vertices)
 	if len(clippedVertices) < 3 {
 		return nil
 	}
 
-	var out2d []mgl.Vec2
-	var outz []float64
-	var outtex []mgl.Vec2
+	out2d := vec2Pool.Get().([]mgl.Vec2)[:0]
+	outz := float64Pool.Get().([]float64)[:0]
+	outtex := vec2Pool.Get().([]mgl.Vec2)[:0]
 	for i, v := range clippedVertices {
 		if v.W() <= 0 {
 			continue
@@ -252,27 +249,30 @@ func (camera *Camera) ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2
 		sx := (ndc.X() + 1) * 0.5 * float64(width)
 		sy := (1 - (ndc.Y()+1)*0.5) * float64(height)
 		out2d = append(out2d, mgl.Vec2{sx, sy})
-		outz = append(outz, ndc.Z()) // Store NDC z value
-
+		outz = append(outz, ndc.Z())
 		if hasTexture {
 			outtex = append(outtex, clippedTexCoords[i])
 		}
 	}
 	if len(out2d) < 3 {
+		vec2Pool.Put(out2d)
+		float64Pool.Put(outz)
+		vec2Pool.Put(outtex)
 		return nil
 	}
 
-	var flat []float64
+	flat := float64Pool.Get().([]float64)[:0]
 	for _, v := range out2d {
 		flat = append(flat, v.X(), v.Y())
 	}
-	indices, _ := earcut.Earcut(flat, nil, 2)
-	var result []struct {
-		Points     [3]mgl.Vec2
-		Z          [3]float64
-		TexCoords  [3]mgl.Vec2
-		HasTexture bool
+
+	earcutIndices, _ := earcut.Earcut(flat, nil, 2)
+	indices := indexPool.Get().([]uint32)[:0]
+	for _, i := range earcutIndices {
+		indices = append(indices, uint32(i))
 	}
+
+	result := trianglePool.Get().([]ClippedTriangle)[:0]
 	for i := 0; i+2 < len(indices); i += 3 {
 		tri := [3]mgl.Vec2{
 			out2d[indices[i]],
@@ -284,7 +284,6 @@ func (camera *Camera) ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2
 			outz[indices[i+1]],
 			outz[indices[i+2]],
 		}
-
 		var textri [3]mgl.Vec2
 		if hasTexture {
 			textri = [3]mgl.Vec2{
@@ -293,14 +292,15 @@ func (camera *Camera) ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2
 				outtex[indices[i+2]],
 			}
 		}
-
-		result = append(result, struct {
-			Points     [3]mgl.Vec2
-			Z          [3]float64
-			TexCoords  [3]mgl.Vec2
-			HasTexture bool
-		}{tri, ztri, textri, hasTexture})
+		result = append(result, ClippedTriangle{Points: tri, Z: ztri, TexCoords: textri, HasTexture: hasTexture})
 	}
+
+	vec2Pool.Put(out2d)
+	float64Pool.Put(outz)
+	vec2Pool.Put(outtex)
+	float64Pool.Put(flat)
+	indexPool.Put(indices)
+
 	return result
 }
 

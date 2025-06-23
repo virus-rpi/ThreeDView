@@ -23,12 +23,7 @@ type Controller interface {
 
 type CameraInterface interface {
 	GetVisibleFaces() chan FaceData
-	ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2) []struct {
-		Points     [3]mgl.Vec2
-		Z          [3]float64
-		TexCoords  [3]mgl.Vec2
-		HasTexture bool
-	}
+	ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2) []ClippedTriangle
 	UnProject(point2d mgl.Vec2, distance Unit) mgl.Vec3
 	BuildOctree()
 	RebuildOctree()
