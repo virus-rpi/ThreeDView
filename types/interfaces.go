@@ -21,7 +21,7 @@ type Controller interface {
 }
 
 type CameraInterface interface {
-	GetVisibleFaces() []FaceData
+	GetVisibleFaces() chan FaceData
 	ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2) []struct {
 		Points     [3]mgl.Vec2
 		Z          [3]float64

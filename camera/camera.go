@@ -15,7 +15,7 @@ type Camera struct {
 	fov         Radians     // Field of view in radians
 	rotation    mgl.Quat    // Camera rotation as a quaternion
 	controller  Controller  // Camera controller
-	octree      *OctreeNode // Octree for culling
+	octree      *octreeNode // Octree for culling
 	octreeMutex sync.RWMutex
 	widget      ThreeDWidgetInterface
 
@@ -143,7 +143,7 @@ func (camera *Camera) UpdateCamera() {
 			Min: mgl.Vec3{-1000, -1000, -1000},
 			Max: mgl.Vec3{1000, 1000, 1000},
 		}
-		camera.octree = NewOctree(bounds, 8, 32)
+		camera.octree = newOctree(bounds, 8, 32)
 	}
 
 	// Update cached values
@@ -156,10 +156,18 @@ func (camera *Camera) UpdateCamera() {
 }
 
 // GetVisibleFaces returns faces visible in the frustum
-func (camera *Camera) GetVisibleFaces() []FaceData {
+func (camera *Camera) GetVisibleFaces() chan FaceData {
 	camera.octreeMutex.RLock()
 	defer camera.octreeMutex.RUnlock()
-	return camera.octree.Query(camera.frustumCache)
+	callbackChan := make(chan FaceData, 1000)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		camera.octree.query(camera.frustumCache, callbackChan, &wg)
+		wg.Wait()
+		close(callbackChan)
+	}()
+	return callbackChan
 }
 
 // Project projects a 3D point to a 2D point on the screen using mgl
@@ -405,7 +413,7 @@ func (camera *Camera) BuildOctree() {
 		Min: mgl.Vec3{-math.MaxInt, -math.MaxInt, -math.MaxInt},
 		Max: mgl.Vec3{math.MaxInt, math.MaxInt, math.MaxInt},
 	}
-	camera.octree = NewOctree(bounds, 8, 32)
+	camera.octree = newOctree(bounds, 8, 32)
 
 	// Get all objects from widget
 	objects := camera.widget.GetObjects()
@@ -422,7 +430,7 @@ func (camera *Camera) BuildOctree() {
 			defer wg.Done()
 			faces := obj.Faces()
 			for _, face := range faces {
-				camera.octree.Insert(face)
+				camera.octree.insert(face)
 			}
 		}(obj)
 	}

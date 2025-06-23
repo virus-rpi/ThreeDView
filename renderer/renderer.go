@@ -56,36 +56,14 @@ func (r *Renderer) resetZBuffer() {
 	}
 }
 
-func (r *Renderer) getFacesInFrustum() chan interface{} {
-	callbackChannel := make(chan interface{}, 10000)
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		visibleFaces := r.widget.GetCamera().GetVisibleFaces()
-		log.Println("VisibleFaces: ", len(visibleFaces))
-		wg.Add(len(visibleFaces))
-		for _, face := range visibleFaces {
-			callbackChannel <- face
-			wg.Done()
-		}
-		wg.Done()
-	}()
-	go func() {
-		wg.Wait()
-		close(callbackChannel)
-	}()
-	return callbackChannel
-}
-
 func (r *Renderer) clipAndProjectFaces() []ProjectedFaceData {
 	callbackChannel := make(chan interface{}, 10000)
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		for faceData := range r.getFacesInFrustum() {
-			face, _ := faceData.(FaceData)
+		for faceData := range r.widget.GetCamera().GetVisibleFaces() {
 			wg.Add(1)
-			r.workerChannel <- &instruction{instructionType: "clipAndProject", data: face, callbackChannel: callbackChannel, doneFunction: func() {
+			r.workerChannel <- &instruction{instructionType: "clipAndProject", data: faceData, callbackChannel: callbackChannel, doneFunction: func() {
 				wg.Done()
 			}}
 		}

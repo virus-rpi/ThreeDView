@@ -6,27 +6,27 @@ import (
 	"sync"
 )
 
-type OctreeNode struct {
+type octreeNode struct {
 	Bounds   types.AABB
 	Depth    int
 	MaxDepth int
 	MaxItems int
-	Children []*OctreeNode
+	Children []*octreeNode
 	Faces    []types.FaceData
-	Parent   *OctreeNode
+	Parent   *octreeNode
 	sync.RWMutex
 }
 
-func NewOctree(bounds types.AABB, maxDepth, maxItems int) *OctreeNode {
-	return &OctreeNode{
+func newOctree(bounds types.AABB, maxDepth, maxItems int) *octreeNode {
+	return &octreeNode{
 		Bounds:   bounds,
 		MaxDepth: maxDepth,
 		MaxItems: maxItems,
-		Children: make([]*OctreeNode, 8), // allocate space for 8 children
+		Children: make([]*octreeNode, 8), // allocate space for 8 children
 	}
 }
 
-func (n *OctreeNode) Insert(face types.FaceData) {
+func (n *octreeNode) insert(face types.FaceData) {
 	n.Lock()
 	defer n.Unlock()
 
@@ -48,7 +48,7 @@ func (n *OctreeNode) Insert(face types.FaceData) {
 	// Try to insert into a child
 	for _, child := range n.Children {
 		if child.Bounds.Contains(face.GetBounds()) {
-			child.Insert(face)
+			child.insert(face)
 			return
 		}
 	}
@@ -57,7 +57,7 @@ func (n *OctreeNode) Insert(face types.FaceData) {
 	n.Faces = append(n.Faces, face)
 }
 
-func (n *OctreeNode) split() {
+func (n *octreeNode) split() {
 	center := n.Bounds.Center()
 
 	for i := 0; i < 8; i++ {
@@ -77,13 +77,13 @@ func (n *OctreeNode) split() {
 			newMax[2] = n.Bounds.Max[2]
 		}
 
-		n.Children[i] = &OctreeNode{
+		n.Children[i] = &octreeNode{
 			Bounds:   types.AABB{Min: newMin, Max: newMax},
 			Depth:    n.Depth + 1,
 			MaxDepth: n.MaxDepth,
 			MaxItems: n.MaxItems,
 			Parent:   n,
-			Children: make([]*OctreeNode, 8),
+			Children: make([]*octreeNode, 8),
 		}
 	}
 
@@ -94,7 +94,7 @@ func (n *OctreeNode) split() {
 		inserted := false
 		for _, child := range n.Children {
 			if child.Bounds.Contains(face.GetBounds()) {
-				child.Insert(face)
+				child.insert(face)
 				inserted = true
 				break
 			}
@@ -105,28 +105,27 @@ func (n *OctreeNode) split() {
 	}
 }
 
-func (n *OctreeNode) Query(frustum Frustum) []types.FaceData {
+func (n *octreeNode) query(frustum Frustum, callbackChan chan types.FaceData, wg *sync.WaitGroup) {
+	defer wg.Done()
 	n.RLock()
 	defer n.RUnlock()
 
 	if !frustum.Intersects(n.Bounds) {
-		return nil
+		return
 	}
 
-	var result []types.FaceData
 	for _, face := range n.Faces {
 		if frustum.Intersects(face.GetBounds()) {
-			result = append(result, face)
+			callbackChan <- face
 		}
 	}
 
 	if n.Children[0] != nil {
 		for _, child := range n.Children {
-			result = append(result, child.Query(frustum)...)
+			wg.Add(1)
+			child.query(frustum, callbackChan, wg)
 		}
 	}
-
-	return result
 }
 
 type Frustum struct {
