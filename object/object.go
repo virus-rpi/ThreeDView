@@ -1,29 +1,12 @@
 package object
 
 import (
-	. "ThreeDView/camera"
 	"ThreeDView/types"
 	mgl "github.com/go-gl/mathgl/mgl64"
 	"image"
 	"image/color"
 	"sync"
 )
-
-type threeDWidgetInterface interface {
-	types.ThreeDWidgetInterface
-	AddObject(*Object)
-	GetCamera() *Camera
-}
-
-// FaceData represents a face in 3D space
-type FaceData struct {
-	Face         types.Face  // The Face in 3D space as a Face
-	Color        color.Color // The Color of the Face
-	Distance     types.Unit  // The Distance of the Face from the camera 3d world space
-	TextureImage image.Image // The texture image for the face (nil if no texture)
-	TexCoords    [3]mgl.Vec2 // Texture coordinates for each vertex
-	HasTexture   bool        // Whether this face has texture information
-}
 
 // ProjectedFaceData represents a face projected to 2D space
 type ProjectedFaceData struct {
@@ -38,25 +21,61 @@ type ProjectedFaceData struct {
 
 // Object represents a 3D shape in world space
 type Object struct {
-	Faces    []FaceData            // Faces of the Object in local space
-	Rotation mgl.Quat              // Rotation of the Object in world space (now quaternion)
-	Position mgl.Vec3              // Position of the Object in world space
-	Widget   threeDWidgetInterface // The Widget the Object is in
+	faces    []types.FaceData            // faces of the Object in local space
+	rotation mgl.Quat                    // Rotation of the Object in world space (now quaternion)
+	position mgl.Vec3                    // Position of the Object in world space
+	widget   types.ThreeDWidgetInterface // The widget the Object is in
+}
+
+func (object *Object) Faces() []types.FaceData {
+	return object.faces
+}
+
+func (object *Object) SetFaces(faces []types.FaceData) {
+	object.faces = faces
+	object.widget.GetCamera().BuildOctree()
+}
+
+func (object *Object) Rotation() mgl.Quat {
+	return object.rotation
+}
+
+func (object *Object) SetRotation(rotation mgl.Quat) {
+	object.rotation = rotation
+	object.widget.GetCamera().BuildOctree()
+}
+
+func (object *Object) Position() mgl.Vec3 {
+	return object.position
+}
+
+func (object *Object) SetPosition(position mgl.Vec3) {
+	object.position = position
+	object.widget.GetCamera().BuildOctree()
+}
+
+func (object *Object) Widget() types.ThreeDWidgetInterface {
+	return object.widget
+}
+
+func (object *Object) SetWidget(widget types.ThreeDWidgetInterface) {
+	object.widget = widget
+	object.widget.GetCamera().BuildOctree()
 }
 
 // GetFaces returns the faces of the shape in world space as FaceData
-func (object *Object) GetFaces() []FaceData {
-	faces := make([]FaceData, len(object.Faces))
+func (object *Object) GetFaces() []types.FaceData {
+	faces := make([]types.FaceData, len(object.faces))
 	var wg sync.WaitGroup
-	wg.Add(len(object.Faces))
-	for i, face := range object.Faces {
-		go func(i int, face FaceData) {
+	wg.Add(len(object.faces))
+	for i, face := range object.faces {
+		go func(i int, face types.FaceData) {
 			defer wg.Done()
 			clonedFace := face
 			clonedFace.Face = face.Face
-			clonedFace.Face.Rotate(mgl.Vec3{}, object.Rotation)
-			clonedFace.Face.Add(object.Position)
-			clonedFace.Distance = clonedFace.Face.DistanceTo(object.Widget.GetCamera().Position)
+			clonedFace.Rotate(mgl.Vec3{}, object.rotation)
+			clonedFace.Add(object.position)
+			clonedFace.Distance = clonedFace.DistanceTo(object.widget.GetCamera().Position())
 
 			// Preserve texture information
 			clonedFace.TextureImage = face.TextureImage
@@ -68,12 +87,4 @@ func (object *Object) GetFaces() []FaceData {
 	}
 	wg.Wait()
 	return faces
-}
-
-func (object *Object) GetPosition() mgl.Vec3 {
-	return object.Position
-}
-
-func (object *Object) GetRotation() mgl.Quat {
-	return object.Rotation
 }

@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	mgl "github.com/go-gl/mathgl/mgl64"
 	"image/color"
+	"log"
 )
 
 func main() {
@@ -28,20 +29,15 @@ func main() {
 	})
 	threeDEnv.SetResolutionFactor(1.0)
 
-	object.NewOrientationObject(threeDEnv)
 	center, _ := object.NewObjectFromObjFile("./example/assets/stress-boat.obj", mgl.Vec3{0, 100, 0}, mgl.QuatIdent(), 100, color.RGBA{R: 255, B: 255, A: 255}, "./example/assets/stress-boat-texture.jpg", threeDEnv)
+	log.Println("Loaded object")
 
-	envCamera := camera.NewCamera(mgl.Vec3{
-		500,
-		0,
-		200,
-	}, mgl.QuatIdent())
 	// manualController := camera.NewManualController()
 	// manualController.ShowControlWindow()
 	// envCamera.SetController(manualController)
 	orbitController := camera.NewOrbitController(center)
-	envCamera.SetController(orbitController)
-	threeDEnv.SetCamera(&envCamera)
+	threeDEnv.GetCamera().SetController(orbitController)
+	log.Println("Created camera controller")
 
 	MainWindow.SetContent(threeDEnv)
 

@@ -8,7 +8,7 @@ import (
 )
 
 // NewCube creates a cube object with the given size, position, rotation, and color
-func NewCube(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color, w threeDWidgetInterface) *Object {
+func NewCube(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface) *Object {
 	half := float64(size) / 2
 	vertices := []mgl.Vec3{
 		{-half, -half, -half},
@@ -43,17 +43,17 @@ func NewCube(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color,
 	}
 
 	cube := Object{
-		Faces:    facesData,
-		Position: position,
-		Rotation: rotation,
-		Widget:   w,
+		faces:    facesData,
+		position: position,
+		rotation: rotation,
+		widget:   w,
 	}
 	w.AddObject(&cube)
 	return &cube
 }
 
 // NewPlane creates a plane object with the given size, position, rotation, color, and resolution
-func NewPlane(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color, w threeDWidgetInterface, resolution int) *Object {
+func NewPlane(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface, resolution int) *Object {
 	half := size / 2
 	step := size / Unit(resolution)
 	var vertices []mgl.Vec3
@@ -91,17 +91,17 @@ func NewPlane(size Unit, position mgl.Vec3, rotation mgl.Quat, color color.Color
 	}
 
 	plane := Object{
-		Faces:    facesData,
-		Position: position,
-		Rotation: rotation,
-		Widget:   w,
+		faces:    facesData,
+		position: position,
+		rotation: rotation,
+		widget:   w,
 	}
 	w.AddObject(&plane)
 	return &plane
 }
 
 // NewOrientationObject creates an orientation object with arrows for X, Y, and Z axes
-func NewOrientationObject(w threeDWidgetInterface) *Object {
+func NewOrientationObject(w ThreeDWidgetInterface) *Object {
 	size := Unit(5)
 	thickness := size / 20
 
@@ -157,40 +157,40 @@ func NewOrientationObject(w threeDWidgetInterface) *Object {
 	}
 
 	orientationObject := Object{
-		Faces:    faces,
-		Position: mgl.Vec3{0, 0, 0},
-		Rotation: mgl.QuatIdent(),
-		Widget:   w,
+		faces:    faces,
+		position: mgl.Vec3{0, 0, 0},
+		rotation: mgl.QuatIdent(),
+		widget:   w,
 	}
 	w.RegisterTickMethod(func() {
 		desiredPixelSize := 40
 		screenHeight := w.GetHeight()
-		fov := float64(w.GetCamera().Fov)
+		fov := float64(w.GetCamera().Fov())
 
 		fovRad := fov * math.Pi / 180.0
 		distance := (float64(size) / 2) / (math.Tan(fovRad/2) * (float64(desiredPixelSize) / float64(screenHeight)))
 
 		margin := desiredPixelSize * 2
-		orientationObject.Position = w.GetCamera().UnProject(mgl.Vec2{float64(margin), float64(margin)}, Unit(distance), w.GetWidth(), w.GetHeight())
+		orientationObject.SetPosition(w.GetCamera().UnProject(mgl.Vec2{float64(margin), float64(margin)}, Unit(distance)))
 	})
 	w.AddObject(&orientationObject)
 	return &orientationObject
 }
 
 // NewEmpty creates an empty Object with no faces, useful for markers or placeholders
-func NewEmpty(w threeDWidgetInterface, position mgl.Vec3) *Object {
+func NewEmpty(w ThreeDWidgetInterface, position mgl.Vec3) *Object {
 	empty := Object{
-		Faces:    nil,
-		Position: position,
-		Rotation: mgl.QuatIdent(),
-		Widget:   w,
+		faces:    nil,
+		position: position,
+		rotation: mgl.QuatIdent(),
+		widget:   w,
 	}
 	w.AddObject(&empty)
 	return &empty
 }
 
 // NewCylinder creates a sphere object with the given position, rotation, color, and radius
-func NewCylinder(position mgl.Vec3, rotation mgl.Quat, color color.Color, w threeDWidgetInterface, height, radius Unit) *Object {
+func NewCylinder(position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface, height, radius Unit) *Object {
 	var faces []FaceData
 	for i := 0; i < 360; i += 20 {
 		angle1 := float64(i) * math.Pi / 180
@@ -229,17 +229,17 @@ func NewCylinder(position mgl.Vec3, rotation mgl.Quat, color color.Color, w thre
 	}
 
 	cylinder := Object{
-		Faces:    faces,
-		Position: position,
-		Rotation: rotation,
-		Widget:   w,
+		faces:    faces,
+		position: position,
+		rotation: rotation,
+		widget:   w,
 	}
 	w.AddObject(&cylinder)
 	return &cylinder
 }
 
 // NewCone creates a cone object with the given position, rotation, color, and radius
-func NewCone(position mgl.Vec3, rotation mgl.Quat, color color.Color, w threeDWidgetInterface, height, radius Unit) *Object {
+func NewCone(position mgl.Vec3, rotation mgl.Quat, color color.Color, w ThreeDWidgetInterface, height, radius Unit) *Object {
 	var faces []FaceData
 
 	for i := 0; i < 360; i += 20 {
@@ -270,10 +270,10 @@ func NewCone(position mgl.Vec3, rotation mgl.Quat, color color.Color, w threeDWi
 	}
 
 	cone := Object{
-		Faces:    faces,
-		Position: position,
-		Rotation: rotation,
-		Widget:   w,
+		faces:    faces,
+		position: position,
+		rotation: rotation,
+		widget:   w,
 	}
 	w.AddObject(&cone)
 	return &cone

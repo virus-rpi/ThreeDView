@@ -1,7 +1,6 @@
 package renderer
 
 import (
-	. "ThreeDView/camera"
 	. "ThreeDView/object"
 	. "ThreeDView/types"
 	"image"
@@ -15,21 +14,15 @@ import (
 	"time"
 )
 
-type threeDWidgetInterface interface {
-	ThreeDWidgetInterface
-	GetCamera() *Camera
-	GetObjects() []*Object
-}
-
 type Renderer struct {
-	widget        threeDWidgetInterface
+	widget        ThreeDWidgetInterface
 	img           *image.RGBA
 	zBuffer       [][]float64
 	renderWorkers []*renderWorker
 	workerChannel chan *instruction
 }
 
-func NewRenderer(widget threeDWidgetInterface) *Renderer {
+func NewRenderer(widget ThreeDWidgetInterface) *Renderer {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	renderer := &Renderer{
 		widget:        widget,
@@ -66,11 +59,16 @@ func (r *Renderer) resetZBuffer() {
 func (r *Renderer) getFacesInFrustum() chan interface{} {
 	callbackChannel := make(chan interface{}, 10000)
 	wg := sync.WaitGroup{}
-	wg.Add(len(r.widget.GetObjects()))
+	wg.Add(1)
 	go func() {
-		for _, object := range r.widget.GetObjects() {
-			r.workerChannel <- &instruction{instructionType: "getFacesInFrustum", data: object.GetFaces(), callbackChannel: callbackChannel, doneFunction: func() { wg.Done() }}
+		visibleFaces := r.widget.GetCamera().GetVisibleFaces()
+		log.Println("VisibleFaces: ", len(visibleFaces))
+		wg.Add(len(visibleFaces))
+		for _, face := range visibleFaces {
+			callbackChannel <- face
+			wg.Done()
 		}
+		wg.Done()
 	}()
 	go func() {
 		wg.Wait()

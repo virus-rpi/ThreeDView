@@ -1,27 +1,24 @@
 package camera
 
-// Controller is an interface for camera controllers to implement
-type Controller interface {
-	setCamera(*Camera)
-}
+import "ThreeDView/types"
 
 // BaseController is a base controller for camera controllers
 type BaseController struct {
-	camera *Camera
+	camera types.CameraInterface
 }
 
-// setCamera sets the camera for the controller
-func (controller *BaseController) setCamera(camera *Camera) {
+// SetCamera sets the camera for the controller
+func (controller *BaseController) SetCamera(camera types.CameraInterface) {
 	controller.camera = camera
 }
 
-// DragController is an interface for Controller that supports dragging
+// DragController is an interface for controller that supports dragging
 type DragController interface {
 	OnDrag(float32, float32)
 	OnDragEnd()
 }
 
-// ScrollController is an interface for Controller that supports scrolling
+// ScrollController is an interface for controller that supports scrolling
 type ScrollController interface {
 	OnScroll(float32, float32)
 }

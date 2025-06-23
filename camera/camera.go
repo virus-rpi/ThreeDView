@@ -4,132 +4,200 @@ import (
 	. "ThreeDView/types"
 	"github.com/flywave/go-earcut"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"log"
 	"math"
+	"sync"
 )
 
 // Camera represents a camera in 3D space
 type Camera struct {
-	Position   mgl.Vec3   // Camera position in world space in units
-	Fov        Degrees    // Field of view in degrees
-	Rotation   mgl.Quat   // Camera rotation as a quaternion
-	Controller Controller // Camera Controller
+	position    mgl.Vec3    // Camera position in world space in units
+	fov         Radians     // Field of view in radians
+	rotation    mgl.Quat    // Camera rotation as a quaternion
+	controller  Controller  // Camera controller
+	octree      *OctreeNode // Octree for culling
+	octreeMutex sync.RWMutex
+	widget      ThreeDWidgetInterface
+
+	// Cached values
+	viewCache        mgl.Mat4
+	perspectiveCache mgl.Mat4
+	mvpCache         mgl.Mat4
+	frustumCache     Frustum
+	aspectRatio      float64
+	cacheMutex       sync.RWMutex
+}
+
+func (camera *Camera) Position() mgl.Vec3 {
+	return camera.position
+}
+
+func (camera *Camera) SetPosition(position mgl.Vec3) {
+	camera.position = position
+}
+
+func (camera *Camera) Fov() Radians {
+	return camera.fov
+}
+
+func (camera *Camera) SetFov(fov Degrees) {
+	camera.fov = fov.ToRadians()
+}
+
+func (camera *Camera) Rotation() mgl.Quat {
+	return camera.rotation
+}
+
+func (camera *Camera) SetRotation(rotation mgl.Quat) {
+	camera.rotation = rotation
+}
+
+func (camera *Camera) Controller() Controller {
+	return camera.controller
+}
+
+// SetController sets the controller for the camera. It has to implement the controller interface
+func (camera *Camera) SetController(controller Controller) {
+	camera.controller = controller
+	controller.SetCamera(camera)
 }
 
 // NewCamera creates a new camera at the given position in world space and rotation in camera space
-func NewCamera(position mgl.Vec3, rotation mgl.Quat) Camera {
-	return Camera{Position: position, Rotation: rotation, Fov: 90}
+func NewCamera(position mgl.Vec3, rotation mgl.Quat, widget ThreeDWidgetInterface) *Camera {
+	cam := &Camera{
+		position: position,
+		rotation: rotation,
+		fov:      Degrees(90).ToRadians(),
+		widget:   widget,
+	}
+	cam.UpdateCamera() // Initialize cache
+	log.Println("initialized cam cache")
+	cam.BuildOctree()
+	log.Println("initialized octree")
+	widget.SetCamera(cam)
+	log.Println("added camera")
+	return cam
 }
 
-// SetController sets the controller for the camera. It has to implement the Controller interface
-func (camera *Camera) SetController(controller Controller) {
-	camera.Controller = controller
-	controller.setCamera(camera)
+// getFrustumPlanes extracts frustum planes from the camera
+func (camera *Camera) getFrustumPlanes() Frustum {
+	mvp := camera.mvpCache
+
+	var frustum Frustum
+	m := mvp[:]
+
+	// Left plane
+	frustum.Planes[0] = Plane{
+		Normal: mgl.Vec3{m[3] + m[0], m[7] + m[4], m[11] + m[8]},
+		D:      m[15] + m[12],
+	}
+
+	// Right plane
+	frustum.Planes[1] = Plane{
+		Normal: mgl.Vec3{m[3] - m[0], m[7] - m[4], m[11] - m[8]},
+		D:      m[15] - m[12],
+	}
+
+	// Bottom plane
+	frustum.Planes[2] = Plane{
+		Normal: mgl.Vec3{m[3] + m[1], m[7] + m[5], m[11] + m[9]},
+		D:      m[15] + m[13],
+	}
+
+	// Top plane
+	frustum.Planes[3] = Plane{
+		Normal: mgl.Vec3{m[3] - m[1], m[7] - m[5], m[11] - m[9]},
+		D:      m[15] - m[13],
+	}
+
+	// Near plane
+	frustum.Planes[4] = Plane{
+		Normal: mgl.Vec3{m[3] + m[2], m[7] + m[6], m[11] + m[10]},
+		D:      m[15] + m[14],
+	}
+
+	// Far plane
+	frustum.Planes[5] = Plane{
+		Normal: mgl.Vec3{m[3] - m[2], m[7] - m[6], m[11] - m[10]},
+		D:      m[15] - m[14],
+	}
+
+	// Normalize all planes
+	for i := range frustum.Planes {
+		length := frustum.Planes[i].Normal.Len()
+		frustum.Planes[i].Normal = frustum.Planes[i].Normal.Mul(1.0 / length)
+		frustum.Planes[i].D /= length
+	}
+
+	return frustum
+}
+
+// UpdateCamera updates the cameras octree
+func (camera *Camera) UpdateCamera() {
+	camera.cacheMutex.Lock()
+	defer camera.cacheMutex.Unlock()
+
+	// Initialize octree if needed
+	if camera.octree == nil {
+		bounds := AABB{
+			Min: mgl.Vec3{-1000, -1000, -1000},
+			Max: mgl.Vec3{1000, 1000, 1000},
+		}
+		camera.octree = NewOctree(bounds, 8, 32)
+	}
+
+	// Update cached values
+	width, height := camera.widget.GetWidth(), camera.widget.GetHeight()
+	camera.aspectRatio = float64(width) / float64(height)
+	camera.viewCache = camera.rotation.Mat4().Mul4(mgl.Translate3D(-camera.position.X(), -camera.position.Y(), -camera.position.Z()))
+	camera.perspectiveCache = mgl.Perspective(float64(camera.fov), camera.aspectRatio, 0.1, 1e30)
+	camera.mvpCache = camera.perspectiveCache.Mul4(camera.viewCache)
+	camera.frustumCache = camera.getFrustumPlanes()
+}
+
+// GetVisibleFaces returns faces visible in the frustum
+func (camera *Camera) GetVisibleFaces() []FaceData {
+	camera.octreeMutex.RLock()
+	defer camera.octreeMutex.RUnlock()
+	return camera.octree.Query(camera.frustumCache)
 }
 
 // Project projects a 3D point to a 2D point on the screen using mgl
-func (camera *Camera) Project(point mgl.Vec3, width, height Pixel) mgl.Vec2 {
-	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
-	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, math.MaxFloat64)
-	win := mgl.Project(point, view, proj, 0, 0, int(width), int(height))
+func (camera *Camera) Project(point mgl.Vec3) mgl.Vec2 {
+	camera.cacheMutex.RLock()
+	defer camera.cacheMutex.RUnlock()
+
+	width, height := camera.widget.GetWidth(), camera.widget.GetHeight()
+	win := mgl.Project(point, camera.viewCache, camera.perspectiveCache, 0, 0, int(width), int(height))
 	return mgl.Vec2{win.X(), float64(height) - win.Y()}
 }
 
 // UnProject returns a point at a given distance from the camera along the ray through the screen point
-func (camera *Camera) UnProject(point2d mgl.Vec2, distance Unit, width, height Pixel) mgl.Vec3 {
-	winNear := mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 0.0}
-	winFar := mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 1.0}
-	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
-	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, math.MaxFloat64)
-	nearPoint, _ := mgl.UnProject(winNear, view, proj, 0, 0, int(width), int(height))
-	farPoint, _ := mgl.UnProject(winFar, view, proj, 0, 0, int(width), int(height))
-	dir := farPoint.Sub(nearPoint).Normalize()
-	return nearPoint.Add(dir.Mul(float64(distance)))
-}
-
-// FaceOverlapsFrustum returns true if any part of the face is inside the camera frustum
-func (camera *Camera) FaceOverlapsFrustum(face Face, width, height Pixel) bool {
-	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
-	aspect := float64(width) / float64(height)
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, math.MaxFloat64)
-
-	projected := [3]mgl.Vec3{}
-	for i := 0; i < 3; i++ {
-		projected[i] = mgl.Project(face[i], view, proj, 0, 0, int(width), int(height))
-	}
-
-	for i := 0; i < 3; i++ {
-		x, y := projected[i].X(), projected[i].Y()
-		if x >= 0 && x < float64(width) && y >= 0 && y < float64(height) {
-			return true
-		}
-	}
-
-	testEdge := func(p1, p2 mgl.Vec3) bool {
-		screenEdges := [][2]mgl.Vec2{
-			{{0, 0}, {float64(width), 0}},
-			{{float64(width), 0}, {float64(width), float64(height)}},
-			{{float64(width), float64(height)}, {0, float64(height)}},
-			{{0, float64(height)}, {0, 0}},
-		}
-		for _, edge := range screenEdges {
-			if linesIntersect(
-				mgl.Vec2{p1.X(), p1.Y()}, mgl.Vec2{p2.X(), p2.Y()},
-				edge[0], edge[1],
-			) {
-				return true
-			}
-		}
-		return false
-	}
-
-	for i := 0; i < 3; i++ {
-		if testEdge(projected[i], projected[(i+1)%3]) {
-			return true
-		}
-	}
-
-	corners := []mgl.Vec2{
-		{0, 0},
-		{float64(width), 0},
-		{float64(width), float64(height)},
-		{0, float64(height)},
-		{float64(width) / 2, float64(height) / 2}, // center
-	}
-	tri := [3]mgl.Vec2{
-		{projected[0].X(), projected[0].Y()},
-		{projected[1].X(), projected[1].Y()},
-		{projected[2].X(), projected[2].Y()},
-	}
-	for _, corner := range corners {
-		if pointInTriangle(corner, tri[0], tri[1], tri[2]) {
-			return true
-		}
-	}
-
-	return false
+func (camera *Camera) UnProject(point2d mgl.Vec2, distance Unit) mgl.Vec3 {
+	camera.cacheMutex.RLock()
+	defer camera.cacheMutex.RUnlock()
+	width, height := camera.widget.GetWidth(), camera.widget.GetHeight()
+	nearPoint, _ := mgl.UnProject(mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 0.0}, camera.viewCache, camera.perspectiveCache, 0, 0, int(width), int(height))
+	farPoint, _ := mgl.UnProject(mgl.Vec3{point2d.X(), float64(height) - point2d.Y(), 1.0}, camera.viewCache, camera.perspectiveCache, 0, 0, int(width), int(height))
+	return nearPoint.Add(farPoint.Sub(nearPoint).Normalize().Mul(float64(distance)))
 }
 
 // ClipAndProjectFace clips a polygon (in world space) to the camera frustum and returns the resulting polygon(s) in screen space
 // If texCoords is provided, texture coordinates will be interpolated for the clipped polygon
-func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel, texCoords ...[3]mgl.Vec2) []struct {
+func (camera *Camera) ClipAndProjectFace(face FaceData, texCoords ...[3]mgl.Vec2) []struct {
 	Points     [3]mgl.Vec2
 	Z          [3]float64
 	TexCoords  [3]mgl.Vec2
 	HasTexture bool
 } {
-	view := camera.Rotation.Mat4().Mul4(mgl.Translate3D(-camera.Position.X(), -camera.Position.Y(), -camera.Position.Z()))
-	aspect := float64(width) / float64(height)
-
-	// Use a very large far plane, but not math.MaxFloat64 to avoid numerical instability
-	farPlane := 1e30 // Much larger than before, but not so large it causes precision issues
-	proj := mgl.Perspective(float64(camera.Fov.ToRadians()), aspect, 0.1, farPlane)
-	mvp := proj.Mul4(view)
+	camera.cacheMutex.RLock()
+	mvp := camera.mvpCache
+	camera.cacheMutex.RUnlock()
+	width, height := camera.widget.GetWidth(), camera.widget.GetHeight()
 
 	vertices := make([]mgl.Vec4, 3)
 	for i := 0; i < 3; i++ {
-		v := face[i]
+		v := face.Face[i]
 		v4 := mgl.Vec4{v.X(), v.Y(), v.Z(), 1}
 		vertices[i] = mvp.Mul4x1(v4)
 	}
@@ -167,7 +235,7 @@ func (camera *Camera) ClipAndProjectFace(face Face, width, height Pixel, texCoor
 	var outz []float64
 	var outtex []mgl.Vec2
 	for i, v := range clippedVertices {
-		if v.W() <= 0 { // Changed from == 0 to <= 0 to handle points at or beyond infinity
+		if v.W() <= 0 {
 			continue
 		}
 		ndc := v.Mul(1.0 / v.W())
@@ -329,24 +397,34 @@ func clipPolygonHomogeneousWithTexCoords(vertices []mgl.Vec4, texCoords map[int]
 	return outVertices, outTexCoords
 }
 
-func linesIntersect(p1, p2, q1, q2 mgl.Vec2) bool {
-	ccw := func(a, b, c mgl.Vec2) bool {
-		return (c.Y()-a.Y())*(b.X()-a.X()) > (b.Y()-a.Y())*(c.X()-a.X())
+func (camera *Camera) BuildOctree() {
+	camera.octreeMutex.Lock()
+	defer camera.octreeMutex.Unlock()
+	// Clear existing octree
+	bounds := AABB{
+		Min: mgl.Vec3{-math.MaxInt, -math.MaxInt, -math.MaxInt},
+		Max: mgl.Vec3{math.MaxInt, math.MaxInt, math.MaxInt},
 	}
-	return (ccw(p1, q1, q2) != ccw(p2, q1, q2)) && (ccw(p1, p2, q1) != ccw(p1, p2, q2))
-}
+	camera.octree = NewOctree(bounds, 8, 32)
 
-func pointInTriangle(p, a, b, c mgl.Vec2) bool {
-	v0 := c.Sub(a)
-	v1 := b.Sub(a)
-	v2 := p.Sub(a)
-	dot00 := v0.Dot(v0)
-	dot01 := v0.Dot(v1)
-	dot02 := v0.Dot(v2)
-	dot11 := v1.Dot(v1)
-	dot12 := v1.Dot(v2)
-	invDenom := 1 / (dot00*dot11 - dot01*dot01)
-	u := (dot11*dot02 - dot01*dot12) * invDenom
-	v := (dot00*dot12 - dot01*dot02) * invDenom
-	return (u >= 0) && (v >= 0) && (u+v <= 1)
+	// Get all objects from widget
+	objects := camera.widget.GetObjects()
+
+	if len(objects) == 0 {
+		return
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(objects))
+
+	for _, obj := range objects {
+		go func(obj ObjectInterface) {
+			defer wg.Done()
+			faces := obj.Faces()
+			for _, face := range faces {
+				camera.octree.Insert(face)
+			}
+		}(obj)
+	}
+	wg.Wait()
 }

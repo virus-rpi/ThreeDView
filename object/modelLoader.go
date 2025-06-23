@@ -1,6 +1,7 @@
 package object
 
 import (
+	"ThreeDView/types"
 	"bufio"
 	"fmt"
 	"github.com/flywave/go-earcut"
@@ -65,7 +66,7 @@ func getAverageColorFromTexture(img image.Image, texCoords []mgl.Vec2) color.Col
 
 // NewObjectFromObjFile parses a Wavefront OBJ file at 'path', triangulates all faces
 // If texturePath is provided, it will use the texture to determine face colors
-func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, scale float64, col color.Color, texturePath string, w threeDWidgetInterface) (*Object, error) {
+func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, scale float64, col color.Color, texturePath string, w types.ThreeDWidgetInterface) (*Object, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open OBJ file: %v", err)
@@ -74,7 +75,7 @@ func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, sca
 
 	var vertices []mgl.Vec3
 	var texCoords []mgl.Vec2
-	var facesData []FaceData
+	var facesData []types.FaceData
 
 	var textureImg image.Image
 	if texturePath != "" {
@@ -167,7 +168,7 @@ func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, sca
 				faceColor := col
 
 				// Create face data
-				faceData := FaceData{
+				faceData := types.FaceData{
 					Face:  [3]mgl.Vec3{v1, v2, v3},
 					Color: faceColor,
 				}
@@ -212,10 +213,10 @@ func NewObjectFromObjFile(path string, position mgl.Vec3, rotation mgl.Quat, sca
 	}
 
 	obj := &Object{
-		Faces:    facesData,
-		Position: position,
-		Rotation: rotation,
-		Widget:   w,
+		faces:    facesData,
+		position: position,
+		rotation: rotation,
+		widget:   w,
 	}
 	w.AddObject(obj)
 	return obj, nil

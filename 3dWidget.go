@@ -2,7 +2,6 @@ package ThreeDView
 
 import (
 	. "ThreeDView/camera"
-	. "ThreeDView/object"
 	"ThreeDView/renderer"
 	. "ThreeDView/types"
 	"fyne.io/fyne/v2"
@@ -24,19 +23,19 @@ var (
 // ThreeDWidget is a widget that displays 3D objects
 type ThreeDWidget struct {
 	widget.BaseWidget
-	image               *canvas.Image // The image that is rendered on
-	camera              *Camera       // The camera of the 3D widget
-	objects             []*Object     // The objects in the 3D widget
-	tickMethods         []func()      // The methods that are called every frame
-	bgColor             color.Color   // The background color of the 3D widget
-	renderFaceOutlines  bool          // Whether the faces should be rendered with outlines
-	renderFaceColors    bool          // Whether the faces should be rendered with colors
-	renderTextures      bool          // Whether to use textures for rendering (if available)
-	renderEdgeOutline   bool          // Whether to render edge outlines using Z-buffer edge detection
-	renderZBuffer       bool          // If true, render Z-buffer as grayscale overlay
-	renderPseudoShading bool          // If true, render pseudo-shading based on depth
-	fpsCap              float64       // The maximum frames per second the widget should render at
-	tpsCap              float64       // The maximum ticks per second the widget should tick at
+	image               *canvas.Image     // The image that is rendered on
+	camera              CameraInterface   // The camera of the 3D widget
+	objects             []ObjectInterface // The objects in the 3D widget
+	tickMethods         []func()          // The methods that are called every frame
+	bgColor             color.Color       // The background color of the 3D widget
+	renderFaceOutlines  bool              // Whether the faces should be rendered with outlines
+	renderFaceColors    bool              // Whether the faces should be rendered with colors
+	renderTextures      bool              // Whether to use textures for rendering (if available)
+	renderEdgeOutline   bool              // Whether to render edge outlines using Z-buffer edge detection
+	renderZBuffer       bool              // If true, render Z-buffer as grayscale overlay
+	renderPseudoShading bool              // If true, render pseudo-shading based on depth
+	fpsCap              float64           // The maximum frames per second the widget should render at
+	tpsCap              float64           // The maximum ticks per second the widget should tick at
 	renderer            *renderer.Renderer
 }
 
@@ -52,9 +51,8 @@ func NewThreeDWidget() *ThreeDWidget {
 	}
 	w.renderer = renderer.NewRenderer(w)
 	w.ExtendBaseWidget(w)
-	standardCamera := NewCamera(mgl.Vec3{}, mgl.QuatIdent())
-	w.camera = &standardCamera
-	w.objects = []*Object{}
+	w.camera = NewCamera(mgl.Vec3{}, mgl.QuatIdent(), w)
+	w.objects = make([]ObjectInterface, 0)
 	w.image = canvas.NewImageFromImage(w.renderer.Render())
 	go w.renderLoop()
 	go w.tickLoop()
@@ -88,6 +86,7 @@ func (w *ThreeDWidget) renderLoop() {
 		}
 		start := time.Now()
 		frameDur := time.Second / time.Duration(w.fpsCap)
+		w.camera.UpdateCamera()
 		w.image.Image = w.renderer.Render()
 		fyne.Do(func() { canvas.Refresh(w.image) })
 		elapsed := time.Since(start)
@@ -106,11 +105,12 @@ func (w *ThreeDWidget) RegisterTickMethod(tick func()) {
 }
 
 // AddObject adds a 3D object as Object to the widget. This should be called in the method that creates the object
-func (w *ThreeDWidget) AddObject(object *Object) {
+func (w *ThreeDWidget) AddObject(object ObjectInterface) {
 	w.objects = append(w.objects, object)
+	w.camera.BuildOctree()
 }
 
-func (w *ThreeDWidget) GetCamera() *Camera {
+func (w *ThreeDWidget) GetCamera() CameraInterface {
 	return w.camera
 }
 
@@ -124,7 +124,7 @@ func (w *ThreeDWidget) GetHeight() Pixel {
 
 func (w *ThreeDWidget) GetBackgroundColor() color.Color { return w.bgColor }
 
-func (w *ThreeDWidget) GetObjects() []*Object { return w.objects }
+func (w *ThreeDWidget) GetObjects() []ObjectInterface { return w.objects }
 
 func (w *ThreeDWidget) GetRenderFaceColors() bool {
 	return w.renderFaceColors
@@ -151,7 +151,7 @@ func (w *ThreeDWidget) GetRenderPseudoShading() bool {
 }
 
 // SetCamera sets the camera of the 3D widget
-func (w *ThreeDWidget) SetCamera(camera *Camera) {
+func (w *ThreeDWidget) SetCamera(camera CameraInterface) {
 	w.camera = camera
 }
 
@@ -218,17 +218,17 @@ func (w *ThreeDWidget) CreateRenderer() fyne.WidgetRenderer {
 }
 
 func (w *ThreeDWidget) Dragged(event *fyne.DragEvent) {
-	if controller, ok := w.camera.Controller.(DragController); ok {
+	if controller, ok := w.camera.Controller().(DragController); ok {
 		controller.OnDrag(event.Dragged.DX, event.Dragged.DY)
 	}
 }
 func (w *ThreeDWidget) DragEnd() {
-	if controller, ok := w.camera.Controller.(DragController); ok {
+	if controller, ok := w.camera.Controller().(DragController); ok {
 		controller.OnDragEnd()
 	}
 }
 func (w *ThreeDWidget) Scrolled(event *fyne.ScrollEvent) {
-	if controller, ok := w.camera.Controller.(ScrollController); ok {
+	if controller, ok := w.camera.Controller().(ScrollController); ok {
 		controller.OnScroll(event.Scrolled.DX, event.Scrolled.DY)
 	}
 }

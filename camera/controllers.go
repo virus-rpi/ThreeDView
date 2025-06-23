@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-type ObjectInterface interface {
-	GetPosition() mgl.Vec3
-}
-
 // OrbitController is a controller that allows the camera to orbit around a target Object
 type OrbitController struct {
 	BaseController
@@ -34,7 +30,7 @@ func NewOrbitController(target ObjectInterface) *OrbitController {
 	}
 }
 
-func (controller *OrbitController) setCamera(camera *Camera) {
+func (controller *OrbitController) SetCamera(camera CameraInterface) {
 	controller.BaseController.camera = camera
 	controller.Update()
 }
@@ -104,18 +100,18 @@ func (controller *OrbitController) updatePosition() {
 	if controller.camera == nil || controller.target == nil {
 		return
 	}
-	center := controller.target.GetPosition()
+	center := controller.target.Position()
 	pos := mgl.Vec3{0, 0, float64(controller.distance)}
 	pos = controller.rotation.Rotate(pos)
 	pos = pos.Add(center)
-	controller.camera.Position = pos
+	controller.camera.SetPosition(pos)
 }
 
 func (controller *OrbitController) lookAtTarget() {
 	if controller.camera == nil || controller.target == nil {
 		return
 	}
-	controller.camera.Rotation = mgl.QuatLookAtV(controller.camera.Position, controller.target.GetPosition(), mgl.Vec3{0, 1, 0})
+	controller.camera.SetRotation(mgl.QuatLookAtV(controller.camera.Position(), controller.target.Position(), mgl.Vec3{0, 1, 0}))
 }
 
 // ManualController is a controller that allows the camera to be manually controlled. Useful for debugging
@@ -154,11 +150,13 @@ func (controller *ManualController) GetRotationSlider() *fyne.Container {
 func (controller *ManualController) GetPositionControl() *fyne.Container {
 	sliderX := widget.NewSlider(-100, 100)
 	sliderX.OnChanged = func(value float64) {
+		pos := controller.camera.Position()
 		if value > 0 {
-			controller.camera.Position[0] += 10
+			pos[0] += 10
 		} else {
-			controller.camera.Position[0] -= 10
+			pos[0] -= 10
 		}
+		controller.camera.SetPosition(pos)
 	}
 	sliderX.OnChangeEnded = func(value float64) {
 		sliderX.Value = 0
@@ -166,11 +164,13 @@ func (controller *ManualController) GetPositionControl() *fyne.Container {
 
 	sliderY := widget.NewSlider(-100, 100)
 	sliderY.OnChanged = func(value float64) {
+		pos := controller.camera.Position()
 		if value > 0 {
-			controller.camera.Position[1] += 10
+			pos[1] += 10
 		} else {
-			controller.camera.Position[1] -= 10
+			pos[1] -= 10
 		}
+		controller.camera.SetPosition(pos)
 	}
 	sliderY.OnChangeEnded = func(value float64) {
 		sliderY.Value = 0
@@ -178,11 +178,13 @@ func (controller *ManualController) GetPositionControl() *fyne.Container {
 
 	sliderZ := widget.NewSlider(-100, 100)
 	sliderZ.OnChanged = func(value float64) {
+		pos := controller.camera.Position()
 		if value > 0 {
-			controller.camera.Position[2] += 10
+			pos[2] += 10
 		} else {
-			controller.camera.Position[2] -= 10
+			pos[2] -= 10
 		}
+		controller.camera.SetPosition(pos)
 	}
 	sliderZ.OnChangeEnded = func(value float64) {
 		sliderZ.Value = 0
@@ -203,10 +205,10 @@ func (controller *ManualController) GetInfoLabel() *widget.Label {
 		ticker := time.NewTicker(time.Second / 30)
 		defer ticker.Stop()
 		for range ticker.C {
-			q := controller.camera.Rotation
+			q := controller.camera.Rotation()
 			fyne.Do(func() {
 				label.SetText(fmt.Sprintf("X: %.2f Y: %.2f Z: %.2f      Q: (%.2f, %.2f, %.2f, %.2f)",
-					controller.camera.Position.X(), controller.camera.Position.Y(), controller.camera.Position.Z(),
+					controller.camera.Position().X(), controller.camera.Position().Y(), controller.camera.Position().Z(),
 					q.W, q.X(), q.Y(), q.Z()))
 				label.Refresh()
 			})
@@ -225,7 +227,7 @@ func (controller *ManualController) RefreshCameraRotation() {
 	qYaw := mgl.QuatRotate(yaw, mgl.Vec3{0, 1, 0})
 	qPitch := mgl.QuatRotate(pitch, mgl.Vec3{1, 0, 0})
 	qRoll := mgl.QuatRotate(roll, mgl.Vec3{0, 0, -1})
-	controller.camera.Rotation = qYaw.Mul(qPitch).Mul(qRoll)
+	controller.camera.SetRotation(qYaw.Mul(qPitch).Mul(qRoll))
 }
 
 func (controller *ManualController) ShowControlWindow() {

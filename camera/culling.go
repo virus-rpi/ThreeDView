@@ -1,0 +1,163 @@
+package camera
+
+import (
+	"ThreeDView/types"
+	mgl "github.com/go-gl/mathgl/mgl64"
+	"sync"
+)
+
+type OctreeNode struct {
+	Bounds   types.AABB
+	Depth    int
+	MaxDepth int
+	MaxItems int
+	Children []*OctreeNode
+	Faces    []types.FaceData
+	Parent   *OctreeNode
+	sync.RWMutex
+}
+
+func NewOctree(bounds types.AABB, maxDepth, maxItems int) *OctreeNode {
+	return &OctreeNode{
+		Bounds:   bounds,
+		MaxDepth: maxDepth,
+		MaxItems: maxItems,
+		Children: make([]*OctreeNode, 8), // allocate space for 8 children
+	}
+}
+
+func (n *OctreeNode) Insert(face types.FaceData) {
+	n.Lock()
+	defer n.Unlock()
+
+	if n.Depth == n.MaxDepth {
+		n.Faces = append(n.Faces, face)
+		return
+	}
+
+	if len(n.Faces) < n.MaxItems && len(n.Children) == 0 {
+		n.Faces = append(n.Faces, face)
+		return
+	}
+
+	// Split if not already split
+	if n.Children[0] == nil {
+		n.split()
+	}
+
+	// Try to insert into a child
+	for _, child := range n.Children {
+		if child.Bounds.Contains(face.GetBounds()) {
+			child.Insert(face)
+			return
+		}
+	}
+
+	// If it doesn't fit neatly into any child
+	n.Faces = append(n.Faces, face)
+}
+
+func (n *OctreeNode) split() {
+	center := n.Bounds.Center()
+
+	for i := 0; i < 8; i++ {
+		newMin := n.Bounds.Min
+		newMax := center
+
+		if i&1 != 0 {
+			newMin[0] = center[0]
+			newMax[0] = n.Bounds.Max[0]
+		}
+		if i&2 != 0 {
+			newMin[1] = center[1]
+			newMax[1] = n.Bounds.Max[1]
+		}
+		if i&4 != 0 {
+			newMin[2] = center[2]
+			newMax[2] = n.Bounds.Max[2]
+		}
+
+		n.Children[i] = &OctreeNode{
+			Bounds:   types.AABB{Min: newMin, Max: newMax},
+			Depth:    n.Depth + 1,
+			MaxDepth: n.MaxDepth,
+			MaxItems: n.MaxItems,
+			Parent:   n,
+			Children: make([]*OctreeNode, 8),
+		}
+	}
+
+	// Re-distribute existing faces
+	oldFaces := n.Faces
+	n.Faces = nil
+	for _, face := range oldFaces {
+		inserted := false
+		for _, child := range n.Children {
+			if child.Bounds.Contains(face.GetBounds()) {
+				child.Insert(face)
+				inserted = true
+				break
+			}
+		}
+		if !inserted {
+			n.Faces = append(n.Faces, face)
+		}
+	}
+}
+
+func (n *OctreeNode) Query(frustum Frustum) []types.FaceData {
+	n.RLock()
+	defer n.RUnlock()
+
+	if !frustum.Intersects(n.Bounds) {
+		return nil
+	}
+
+	var result []types.FaceData
+	for _, face := range n.Faces {
+		if frustum.Intersects(face.GetBounds()) {
+			result = append(result, face)
+		}
+	}
+
+	if n.Children[0] != nil {
+		for _, child := range n.Children {
+			result = append(result, child.Query(frustum)...)
+		}
+	}
+
+	return result
+}
+
+type Frustum struct {
+	Planes [6]Plane
+}
+
+type Plane struct {
+	Normal mgl.Vec3
+	D      float64
+}
+
+// Intersects AABB-Frustum intersection test
+func (f *Frustum) Intersects(box types.AABB) bool {
+	for _, plane := range f.Planes {
+		px := box.Min.X()
+		py := box.Min.Y()
+		pz := box.Min.Z()
+
+		if plane.Normal.X() >= 0 {
+			px = box.Max.X()
+		}
+		if plane.Normal.Y() >= 0 {
+			py = box.Max.Y()
+		}
+		if plane.Normal.Z() >= 0 {
+			pz = box.Max.Z()
+		}
+
+		if plane.Normal.Dot(mgl.Vec3{px, py, pz})+plane.D < 0 {
+			return false
+		}
+	}
+	return true
+}

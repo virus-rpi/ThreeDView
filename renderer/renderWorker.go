@@ -15,12 +15,12 @@ type instruction struct {
 }
 
 type renderWorker struct {
-	w               threeDWidgetInterface
+	w               types.ThreeDWidgetInterface
 	workerChannel   chan *instruction
 	shouldTerminate bool
 }
 
-func newRenderWorker(w threeDWidgetInterface, workerChannel chan *instruction) *renderWorker {
+func newRenderWorker(w types.ThreeDWidgetInterface, workerChannel chan *instruction) *renderWorker {
 	return &renderWorker{w: w, workerChannel: workerChannel, shouldTerminate: false}
 }
 
@@ -40,9 +40,6 @@ func (rw *renderWorker) processInstruction(instruction *instruction) {
 	case "terminate":
 		rw.shouldTerminate = true
 		break
-	case "getFacesInFrustum":
-		rw.getFacesInFrustum(instruction)
-		break
 	case "clipAndProject":
 		rw.clipAndProject(instruction)
 		break
@@ -50,18 +47,10 @@ func (rw *renderWorker) processInstruction(instruction *instruction) {
 	instruction.doneFunction()
 }
 
-func (rw *renderWorker) getFacesInFrustum(instruction *instruction) {
-	for _, face := range instruction.data.([]object.FaceData) {
-		if rw.w.GetCamera().FaceOverlapsFrustum(face.Face, rw.w.GetWidth(), rw.w.GetHeight()) {
-			instruction.callbackChannel <- face
-		}
-	}
-}
-
 func (rw *renderWorker) clipAndProject(instruction *instruction) {
-	face := instruction.data.(object.FaceData)
+	face := instruction.data.(types.FaceData)
 
-	clippedPolys := rw.w.GetCamera().ClipAndProjectFace(face.Face, rw.w.GetWidth(), rw.w.GetHeight(), face.TexCoords)
+	clippedPolys := rw.w.GetCamera().ClipAndProjectFace(face, face.TexCoords)
 	if clippedPolys == nil {
 		return
 	}
