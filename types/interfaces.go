@@ -30,6 +30,7 @@ type CameraInterface interface {
 	}
 	UnProject(point2d mgl.Vec2, distance Unit) mgl.Vec3
 	BuildOctree()
+	RebuildOctree()
 	UpdateCamera()
 	Controller() Controller
 	SetController(controller Controller)

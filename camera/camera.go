@@ -11,13 +11,15 @@ import (
 
 // Camera represents a camera in 3D space
 type Camera struct {
-	position    mgl.Vec3    // Camera position in world space in units
-	fov         Radians     // Field of view in radians
-	rotation    mgl.Quat    // Camera rotation as a quaternion
-	controller  Controller  // Camera controller
-	octree      *octreeNode // Octree for culling
-	octreeMutex sync.RWMutex
-	widget      ThreeDWidgetInterface
+	position   mgl.Vec3   // Camera position in world space in units
+	fov        Radians    // Field of view in radians
+	rotation   mgl.Quat   // Camera rotation as a quaternion
+	controller Controller // Camera controller
+	widget     ThreeDWidgetInterface
+
+	needsOctreeRebuild bool
+	octree             *octreeNode // Octree for culling
+	octreeMutex        sync.RWMutex
 
 	// Cached values
 	viewCache        mgl.Mat4
@@ -405,7 +407,16 @@ func clipPolygonHomogeneousWithTexCoords(vertices []mgl.Vec4, texCoords map[int]
 	return outVertices, outTexCoords
 }
 
+func (camera *Camera) RebuildOctree() {
+	camera.needsOctreeRebuild = true
+}
+
 func (camera *Camera) BuildOctree() {
+	if !camera.needsOctreeRebuild && camera.octree != nil {
+		return
+	}
+	log.Println("Building")
+
 	camera.octreeMutex.Lock()
 	defer camera.octreeMutex.Unlock()
 	// Clear existing octree
@@ -435,4 +446,5 @@ func (camera *Camera) BuildOctree() {
 		}(obj)
 	}
 	wg.Wait()
+	camera.needsOctreeRebuild = false
 }

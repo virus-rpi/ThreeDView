@@ -27,13 +27,9 @@ type Object struct {
 	widget   types.ThreeDWidgetInterface // The widget the Object is in
 }
 
-func (object *Object) Faces() []types.FaceData {
-	return object.faces
-}
-
 func (object *Object) SetFaces(faces []types.FaceData) {
 	object.faces = faces
-	object.widget.GetCamera().BuildOctree()
+	object.widget.GetCamera().RebuildOctree()
 }
 
 func (object *Object) Rotation() mgl.Quat {
@@ -42,7 +38,7 @@ func (object *Object) Rotation() mgl.Quat {
 
 func (object *Object) SetRotation(rotation mgl.Quat) {
 	object.rotation = rotation
-	object.widget.GetCamera().BuildOctree()
+	object.widget.GetCamera().RebuildOctree()
 }
 
 func (object *Object) Position() mgl.Vec3 {
@@ -51,7 +47,7 @@ func (object *Object) Position() mgl.Vec3 {
 
 func (object *Object) SetPosition(position mgl.Vec3) {
 	object.position = position
-	object.widget.GetCamera().BuildOctree()
+	object.widget.GetCamera().RebuildOctree()
 }
 
 func (object *Object) Widget() types.ThreeDWidgetInterface {
@@ -60,11 +56,11 @@ func (object *Object) Widget() types.ThreeDWidgetInterface {
 
 func (object *Object) SetWidget(widget types.ThreeDWidgetInterface) {
 	object.widget = widget
-	object.widget.GetCamera().BuildOctree()
+	object.widget.GetCamera().RebuildOctree()
 }
 
-// GetFaces returns the faces of the shape in world space as FaceData
-func (object *Object) GetFaces() []types.FaceData {
+// Faces returns the faces of the shape in world space as FaceData
+func (object *Object) Faces() []types.FaceData {
 	faces := make([]types.FaceData, len(object.faces))
 	var wg sync.WaitGroup
 	wg.Add(len(object.faces))

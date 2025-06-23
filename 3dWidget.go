@@ -69,6 +69,7 @@ func (w *ThreeDWidget) tickLoop() {
 		for _, tick := range w.tickMethods {
 			tick()
 		}
+		w.camera.BuildOctree()
 		elapsed := time.Since(start)
 		if elapsed < tickDur {
 			time.Sleep(tickDur - elapsed)
@@ -107,7 +108,7 @@ func (w *ThreeDWidget) RegisterTickMethod(tick func()) {
 // AddObject adds a 3D object as Object to the widget. This should be called in the method that creates the object
 func (w *ThreeDWidget) AddObject(object ObjectInterface) {
 	w.objects = append(w.objects, object)
-	w.camera.BuildOctree()
+	w.camera.RebuildOctree()
 }
 
 func (w *ThreeDWidget) GetCamera() CameraInterface {
