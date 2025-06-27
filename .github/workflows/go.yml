@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: ["master"]
+      branches: ["master"]
 
 jobs:
   build:
@@ -14,28 +14,33 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.3'
+          go-version: '1.23'
 
       - name: Install fyne tools
         run: |
-          go install fyne.io/fyne/v2/cmd/fyne@latest
-          go install github.com/fyne-io/fyne-cross@latest
+            go install fyne.io/fyne/v2/cmd/fyne@latest
+            go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Tidy modules 
-        run: |
-          go mod tidy
+      - name: Prepare build entrypoint
+        run: cp example/main.go cmd/main.go
 
+      - name: Tidy modules
+        run: go mod tidy
+            
       - name: Build for Windows
-        run: fyne-cross windows -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -main ./example/main.go
+        run: fyne-cross windows --dir=. -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -name ThreeDExampleApp
 
       - name: Build for Android
-        run: fyne-cross android -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -main ./example/main.go
+        run: fyne-cross android --dir=. -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -name ThreeDExampleApp
 
       - name: Build for Linux
-        run: fyne-cross linux -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -main ./example/main.go
+        run: fyne-cross linux --dir=. -icon Icon.png -arch=* -app-id com.virusrpi.threedexqmple -name ThreeDExampleApp
 
       - name: Save Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: artifacts
           path: ./fyne-cross/dist/**
+
+      - name: Cleanup
+        run: rm cmd/main.go || true
