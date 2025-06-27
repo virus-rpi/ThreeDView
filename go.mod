@@ -1,8 +1,8 @@
 module github.com/virus-rpi/ThreeDView
 
-go 1.23.0
+go 1.24.3
 
-toolchain go1.23.3
+toolchain go1.24.3
 
 require (
 	fyne.io/fyne/v2 v2.6.1
