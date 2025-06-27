@@ -26,13 +26,13 @@ jobs:
           go mod tidy
 
       - name: Build for Windows
-        run: fyne-cross windows --dir=./example -icon Icon.png -arch=* -app-id com.virusrpi.threedexample
+        run: fyne-cross windows -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -main ./example/main.go
 
       - name: Build for Android
-        run: fyne-cross android --dir=./example -icon Icon.png -arch=* -app-id com.virusrpi.threedexample
+        run: fyne-cross android -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -main ./example/main.go
 
       - name: Build for Linux
-        run: fyne-cross linux --dir=./example -icon Icon.png -arch=* -app-id com.virusrpi.threedexample
+        run: fyne-cross linux -icon Icon.png -arch=* -app-id com.virusrpi.threedexample -main ./example/main.go
 
       - name: Save Artifacts
         uses: actions/upload-artifact@v4
