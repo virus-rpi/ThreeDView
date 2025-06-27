@@ -1,0 +1,34 @@
+name: Build
+
+on:
+  push:
+    branches: ["master"]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Prepare build
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest && go install github.com/fyne-io/fyne-cross@latest
+
+      - name: Build for Windows
+        run: fyne-cross windows -icon Icon.png -arch=* -app-id com.virusrpi.threedexqmple
+
+      - name: Build for Android
+        run: fyne-cross android -icon Icon.png -arch=* -app-id com.virusrpi.threedexqmple
+
+      - name: Build for Linux
+        run: fyne-cross linux -icon Icon.png -arch=* -app-id com.virusrpi.threedexqmple
+
+      - name: Save Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ./fyne-cross/dist/*
