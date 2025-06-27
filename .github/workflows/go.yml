@@ -22,7 +22,7 @@ jobs:
             go install github.com/fyne-io/fyne-cross@latest
 
       - name: Prepare build entrypoint
-        run: cp example/main.go cmd/main.go
+        run: cp example/main.go main.go
 
       - name: Tidy modules
         run: go mod tidy
