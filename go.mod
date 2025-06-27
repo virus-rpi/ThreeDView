@@ -1,4 +1,4 @@
-module ThreeDView
+module github.com/virus-rpi/ThreeDView
 
 go 1.23.0
 
