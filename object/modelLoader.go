@@ -1,11 +1,11 @@
 package object
 
 import (
-	"ThreeDView/types"
 	"bufio"
 	"fmt"
 	"github.com/flywave/go-earcut"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"github.com/virus-rpi/ThreeDView/types"
 	"image"
 	"image/color"
 	_ "image/jpeg"

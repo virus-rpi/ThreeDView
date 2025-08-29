@@ -1,15 +1,15 @@
 package main
 
 import (
-	"ThreeDView"
-	"ThreeDView/camera"
-	"ThreeDView/object"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/widget"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"github.com/virus-rpi/ThreeDView"
+	"github.com/virus-rpi/ThreeDView/camera"
+	"github.com/virus-rpi/ThreeDView/object"
 	"image/color"
 	"log"
 )

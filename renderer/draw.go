@@ -1,9 +1,9 @@
 package renderer
 
 import (
-	"ThreeDView/object"
-	. "ThreeDView/types"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"github.com/virus-rpi/ThreeDView/object"
+	. "github.com/virus-rpi/ThreeDView/types"
 	"image"
 	"image/color"
 	"math"

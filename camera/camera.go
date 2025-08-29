@@ -1,9 +1,9 @@
 package camera
 
 import (
-	. "ThreeDView/types"
 	"github.com/flywave/go-earcut"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	. "github.com/virus-rpi/ThreeDView/types"
 	"log"
 	"math"
 	"sync"

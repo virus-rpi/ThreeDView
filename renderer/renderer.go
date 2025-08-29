@@ -1,8 +1,8 @@
 package renderer
 
 import (
-	. "ThreeDView/object"
-	. "ThreeDView/types"
+	. "github.com/virus-rpi/ThreeDView/object"
+	. "github.com/virus-rpi/ThreeDView/types"
 	"image"
 	"image/color"
 	"image/draw"

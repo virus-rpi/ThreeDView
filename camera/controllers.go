@@ -1,12 +1,12 @@
 package camera
 
 import (
-	. "ThreeDView/types"
 	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	. "github.com/virus-rpi/ThreeDView/types"
 	"math"
 	"time"
 )

@@ -1,13 +1,13 @@
 package ThreeDView
 
 import (
-	. "ThreeDView/camera"
-	"ThreeDView/renderer"
-	. "ThreeDView/types"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/widget"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	. "github.com/virus-rpi/ThreeDView/camera"
+	"github.com/virus-rpi/ThreeDView/renderer"
+	. "github.com/virus-rpi/ThreeDView/types"
 	"image/color"
 	"log"
 	"math"

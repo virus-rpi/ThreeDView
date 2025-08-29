@@ -1,8 +1,8 @@
 package camera
 
 import (
-	"ThreeDView/types"
 	mgl "github.com/go-gl/mathgl/mgl64"
+	"github.com/virus-rpi/ThreeDView/types"
 	"sync"
 )
 

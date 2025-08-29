@@ -1,6 +1,6 @@
 package camera
 
-import "ThreeDView/types"
+import "github.com/virus-rpi/ThreeDView/types"
 
 // BaseController is a base controller for camera controllers
 type BaseController struct {
