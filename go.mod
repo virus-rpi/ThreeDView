@@ -2,8 +2,6 @@ module github.com/virus-rpi/ThreeDView
 
 go 1.23.0
 
-toolchain go1.23.3
-
 require (
 	fyne.io/fyne/v2 v2.6.3
 	github.com/flywave/go-earcut v0.0.0-20210712015426-7084f78cceb3
